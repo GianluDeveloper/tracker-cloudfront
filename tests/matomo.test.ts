@@ -16,7 +16,7 @@ describe('buildMatomoPayload', () => {
       date: '2025-02-18',
       time: '12:00:00',
       'cs-protocol': 'https',
-      'cs(Host)': 'example.com',
+      'x-host-header': 'example.com',
       'cs-uri-stem': '/path',
       'cs-uri-query': 'foo=bar',
       'sc-status': '200',
@@ -46,7 +46,7 @@ describe('buildMatomoPayload', () => {
       date: '2025-02-18',
       time: '12:00:01',
       'cs-protocol': 'http',
-      'cs(Host)': 'example.com',
+      'x-host-header': 'example.com',
       'cs-uri-stem': '',
       'cs-uri-query': '',
       'sc-status': '',
@@ -69,7 +69,7 @@ describe('buildMatomoPayload', () => {
       date: '2025-02-18',
       time: '12:00:00',
       'cs-protocol': 'https',
-      'cs(Host)': 'example.com',
+      'x-host-header': 'example.com',
       'cs-uri-stem': '/files/report.pdf',
       'cs-uri-query': '',
       'cs(User-Agent)': 'Mozilla/5.0'
@@ -105,7 +105,7 @@ describe('buildMatomoPayload', () => {
             /https?:\/\/downloads\.example\.com\/files\/report\.pdf\?download=true$/i
         },
         entry: {
-          'cs(Host)': 'downloads.example.com',
+          'x-host-header': 'downloads.example.com',
           'cs-uri-query': 'download=true'
         },
         expectedDownload:
@@ -145,7 +145,7 @@ describe('buildMatomoPayload', () => {
           date: '2025-02-18',
           time: '12:00:00',
           'cs-protocol': 'https',
-          'cs(Host)': 'example.com',
+          'x-host-header': 'example.com',
           'cs-uri-stem': '/path',
           'cs(User-Agent)': 'AgentX'
         },
@@ -162,7 +162,7 @@ describe('buildMatomoPayload', () => {
       date: '2025-02-18',
       time: '12:00:00',
       'cs-protocol': 'https',
-      'cs(Host)': 'example.com',
+      'x-host-header': 'example.com',
       'cs-uri-stem': '/path'
     };
     const payload = buildMatomoPayload(entry, configNoAllowlist);
@@ -172,7 +172,7 @@ describe('buildMatomoPayload', () => {
   it('throws when timestamp fields are missing or invalid', () => {
     const base = {
       'cs-protocol': 'https',
-      'cs(Host)': 'example.com',
+      'x-host-header': 'example.com',
       'cs-uri-stem': '/path',
       'cs(User-Agent)': 'AgentX'
     };
@@ -198,7 +198,7 @@ describe('buildMatomoPayload', () => {
           date: '2025-02-18',
           time: '12:00:00',
           'cs-protocol': 'https',
-          'cs(Host)': 'example.com',
+          'x-host-header': 'example.com',
           'cs-uri-stem': '/path',
           'sc-status': '200'
         },

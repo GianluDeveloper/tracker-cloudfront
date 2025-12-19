@@ -78,7 +78,7 @@ Example S3 event notification (console or IaC) for the log bucket:
 Example CloudFront logging fields (set on the distribution) to cover required/optional payloads:
 
 - Enable standard CloudFront access logs to S3 (gzip on).
-- Include these fields (either via `#Fields` header or default order): `date`, `time`, `cs-protocol`, `cs(Host)`, `cs-uri-stem`, `cs-uri-query`, `sc-status`, `time-taken`, `sc-bytes`, `cs(User-Agent)`.
+- Include these fields (either via `#Fields` header or default order): `date`, `time`, `cs-protocol`, `x-host-header`, `cs-uri-stem`, `cs-uri-query`, `sc-status`, `time-taken`, `sc-bytes`, `cs(User-Agent)`.
 - Ensure the log path/prefix matches your S3 trigger filters (e.g. suffix `.gz`).
 
 ## Runtime Behavior

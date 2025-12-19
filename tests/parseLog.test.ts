@@ -15,7 +15,7 @@ const config: MatomoConfig = {
   userAgentAllowlistRegex: /.*/i
 };
 
-const sampleLog = `#Fields: date time cs-protocol cs(Host) cs-uri-stem cs-uri-query sc-status time-taken sc-bytes cs(User-Agent)
+const sampleLog = `#Fields: date time cs-protocol x-host-header cs-uri-stem cs-uri-query sc-status time-taken sc-bytes cs(User-Agent)
 2025-02-18 12:00:00 https example.com /path foo=bar 200 0.123 512 Mozilla/5.0
 `;
 

@@ -4,7 +4,7 @@ const defaultFields = [
   'date',
   'time',
   'cs-protocol',
-  'cs(Host)',
+  'x-host-header',
   'cs-uri-stem',
   'cs-uri-query',
   'sc-status',

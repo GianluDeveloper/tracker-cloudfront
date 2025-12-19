@@ -36,7 +36,7 @@ const smallConfig: MatomoConfig = {
   logLevel: 'debug'
 };
 
-const log = `#Fields: date time cs-protocol cs(Host) cs-uri-stem cs-uri-query sc-status time-taken sc-bytes cs(User-Agent)
+const log = `#Fields: date time cs-protocol x-host-header cs-uri-stem cs-uri-query sc-status time-taken sc-bytes cs(User-Agent)
 2025-02-18 12:00:00 https example.com /path foo=bar 200 0.123 512 Mozilla/5.0
 2025-02-18 12:00:01 http example.com /path2 - 404 0.200 256 curl/8.1.0
 `;
@@ -105,7 +105,7 @@ describe('buildPayloadsFromLogContent', () => {
     const sender = vi
       .spyOn(http, 'sendMatomoBatch')
       .mockResolvedValue(undefined);
-    const badLog = `#Fields: date time cs-protocol cs(Host) cs-uri-stem cs-uri-query sc-status time-taken sc-bytes cs(User-Agent)
+    const badLog = `#Fields: date time cs-protocol x-host-header cs-uri-stem cs-uri-query sc-status time-taken sc-bytes cs(User-Agent)
 2025-02-18 12:00:00 https example.com /path foo=bar 200 0.123 512 Mozilla/5.0
 2025-02-18 12:00:01 https - /missing-host foo=bar 200 0.123 512 Mozilla/5.0
 `;

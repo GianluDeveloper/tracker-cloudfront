@@ -37,7 +37,7 @@ export function buildMatomoPayload(
 
   const documentRegex = config.documentRegex;
   const protocol = entry['cs-protocol'];
-  const host = entry['cs(Host)'];
+  const host = entry['x-host-header'];
   const path = entry['cs-uri-stem'] || '/';
   const query = entry['cs-uri-query'] || '';
   const url = query
