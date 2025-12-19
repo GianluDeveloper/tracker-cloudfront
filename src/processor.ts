@@ -2,7 +2,7 @@ import { parseCloudFrontLines } from './parser.js';
 import { buildMatomoPayload } from './matomo.js';
 import { buildMatomoRequestPayload, sendMatomoBatch } from './http.js';
 import { createLogger } from './logger.js';
-import { isUserAgentAllowed } from './utils.js';
+import { isHttpMethodAllowed, isUserAgentAllowed } from './utils.js';
 import type { MatomoConfig } from './types.js';
 
 export async function sendLogLinesToMatomo(
@@ -18,9 +18,14 @@ export async function sendLogLinesToMatomo(
   let pages = 0;
   let documents = 0;
   const allowRegex = config.userAgentAllowlistRegex;
+  const httpMethodAllowlist = config.httpMethodAllowlist;
   try {
     for await (const entry of parseCloudFrontLines(lines, log)) {
       if (!isUserAgentAllowed(entry, allowRegex)) {
+        skipped += 1;
+        continue;
+      }
+      if (!isHttpMethodAllowed(entry, httpMethodAllowlist)) {
         skipped += 1;
         continue;
       }

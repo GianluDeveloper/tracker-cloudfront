@@ -18,6 +18,7 @@ Serverless pipeline (TypeScript, Node 24) that consumes CloudFront access logs f
 - `DOCUMENT_REGEX` (optional): Case-insensitive regex to detect downloads; matching URLs add `download=<url>` to Matomo payloads. This regex runs against the full URL (`protocol://host/path?query`) and defaults to a modern/common set of extensions (e.g., pdf/docx/xlsx/pptx/csv/json/txt/xml, mp3/mp4/webm/mov/avi, zip/gz/gzip/tgz/tar/bz2/tbz/7z/rar, dmg/exe/msi/apk/jar, epub/mobi/azw3, md5/sig).
 - `LOG_LEVEL` (optional, default `warn`): `silent|error|warn|info|debug`.
 - `USER_AGENT_ALLOWLIST_REGEX` (optional): Case-insensitive regex to permit user agents; non-matching entries are skipped. Defaults to an allowlist for `ChatGPT-User|MistralAI-User|Gemini-Deep-Research|Claude-User|Perplexity-User|Google-NotebookLM|Devin`.
+- `HTTP_METHOD_ALLOWLIST` (optional, default `GET`): Comma-separated list of HTTP methods to track (e.g. `GET,POST`); empty/unset uses the default. Requires `cs-method` to be present in the parsed log entry (via CloudFront `#Fields` or default field order).
 
 ## Build & Package
 
@@ -78,7 +79,7 @@ Example S3 event notification (console or IaC) for the log bucket:
 Example CloudFront logging fields (set on the distribution) to cover required/optional payloads:
 
 - Enable standard CloudFront access logs to S3 (gzip on).
-- Include these fields (either via `#Fields` header or default order): `date`, `time`, `cs-protocol`, `x-host-header`, `cs-uri-stem`, `cs-uri-query`, `sc-status`, `time-taken`, `sc-bytes`, `cs(User-Agent)`.
+- Include these fields (either via `#Fields` header or default order): `date`, `time`, `cs-method`, `cs-protocol`, `x-host-header`, `cs-uri-stem`, `cs-uri-query`, `sc-status`, `time-taken`, `sc-bytes`, `cs(User-Agent)`.
 - Ensure the log path/prefix matches your S3 trigger filters (e.g. suffix `.gz`).
 
 ## Runtime Behavior
@@ -88,6 +89,7 @@ Example CloudFront logging fields (set on the distribution) to cover required/op
   - Required: `idsite`, `rec:1`, `recMode:1`, `url` (protocol+host+path+query), `cdt` (`Y-m-d H:i:s`), `ua`, `source:'CloudFront'`.
   - Optional: `http_status`, `bw_bytes`, `pf_srv`.
 - Filters requests by user agent using `USER_AGENT_ALLOWLIST_REGEX`; entries are skipped silently before payload assembly when the allowlist is configured (defaults on). If no allowlist is set, empty user agents are allowed.
+- Filters requests by HTTP method using `HTTP_METHOD_ALLOWLIST` (defaults to `GET` only).
 - Batches requests (size `BATCH_SIZE`) and POSTs `{ "requests": ["?param=value", ...] }` to `/matomo.php` with retries/backoff and structured logs.
 - Emits a processing summary with sent and skipped counts.
 

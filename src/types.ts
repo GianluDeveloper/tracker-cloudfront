@@ -17,6 +17,7 @@ export interface MatomoConfig {
   matomoTimeoutMs: number;
   logLevel: LogLevel;
   userAgentAllowlistRegex?: RegExp;
+  httpMethodAllowlist?: string[];
   documentRegex?: RegExp;
 }
 

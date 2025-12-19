@@ -3,6 +3,7 @@ import type { CloudFrontLogEntry, Logger } from './types.js';
 const defaultFields = [
   'date',
   'time',
+  'cs-method',
   'cs-protocol',
   'x-host-header',
   'cs-uri-stem',

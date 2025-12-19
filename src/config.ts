@@ -25,6 +25,29 @@ const defaultAllowlistPattern = `(?:${defaultUserAgentPatterns
   .join('|')})`;
 const defaultDocumentPattern =
   '^[^?]+\\.(?:pdf|docx?|xlsx?|pptx?|csv|json|txt|xml|epub|mobi|azw3|mp3|mp4|mpe?g|webm|mov|avi|ogg|wav|flac|zip|gz|gzip|tgz|tar|bz2|tbz|7z|rar|dmg|exe|msi|apk|jar|md5|sig)(?:\\?|$)';
+const defaultHttpMethodAllowlist = ['GET'];
+
+const parseHttpMethodAllowlist = (
+  raw: string | undefined,
+  fallback: string[] = defaultHttpMethodAllowlist
+): string[] => {
+  const value = raw?.trim();
+  if (!value) return fallback;
+  const methods = value
+    .split(',')
+    .map((m) => m.trim())
+    .filter(Boolean)
+    .map((m) => m.toUpperCase());
+  if (!methods.length) return fallback;
+  for (const method of methods) {
+    if (!/^[A-Z]+$/.test(method)) {
+      throw new Error(
+        `Invalid HTTP_METHOD_ALLOWLIST value "${method}". Expected comma-separated HTTP methods, e.g. "GET,POST".`
+      );
+    }
+  }
+  return Array.from(new Set(methods));
+};
 
 export function getConfig(
   env: Record<string, string | undefined> = process.env
@@ -49,6 +72,10 @@ export function getConfig(
   const logLevel = (env.LOG_LEVEL || 'warn').toLowerCase() as LogLevel;
   const allowlistPattern =
     env.USER_AGENT_ALLOWLIST_REGEX || defaultAllowlistPattern;
+  const httpMethodAllowlist = parseHttpMethodAllowlist(
+    env.HTTP_METHOD_ALLOWLIST,
+    defaultHttpMethodAllowlist
+  );
   const documentPattern = env.DOCUMENT_REGEX || defaultDocumentPattern;
   let userAgentAllowlistRegex: RegExp | undefined;
   let documentRegex: RegExp | undefined;
@@ -73,6 +100,7 @@ export function getConfig(
     matomoTimeoutMs,
     logLevel,
     userAgentAllowlistRegex,
+    httpMethodAllowlist,
     documentRegex
   };
 }

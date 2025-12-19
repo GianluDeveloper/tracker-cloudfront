@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { parseCloudFrontLog } from '../src/parser.js';
 
 const sampleWithFields = `#Version: 1.0
-#Fields: date time cs-protocol x-host-header cs-uri-stem cs-uri-query sc-status time-taken sc-bytes cs(User-Agent)
-2025-02-18 12:00:00 https example.com /path foo=bar 200 0.123 512 Mozilla/5.0
-2025-02-18 12:00:01 http example.com /path2 - 404 0.200 256 curl/8.1.0
+#Fields: date time cs-method cs-protocol x-host-header cs-uri-stem cs-uri-query sc-status time-taken sc-bytes cs(User-Agent)
+2025-02-18 12:00:00 GET https example.com /path foo=bar 200 0.123 512 Mozilla/5.0
+2025-02-18 12:00:01 GET http example.com /path2 - 404 0.200 256 curl/8.1.0
 `;
 const sampleWithMissingParts = `#Fields: date time cs-protocol x-host-header cs-uri-stem cs-uri-query sc-status time-taken sc-bytes cs(User-Agent)
 2025-02-18 12:00:02 https example.com - - 200 - - -
@@ -21,6 +21,7 @@ describe('parseCloudFrontLog', () => {
     expect(entries[0]).toEqual({
       date: '2025-02-18',
       time: '12:00:00',
+      'cs-method': 'GET',
       'cs-protocol': 'https',
       'x-host-header': 'example.com',
       'cs-uri-stem': '/path',
@@ -33,6 +34,7 @@ describe('parseCloudFrontLog', () => {
     expect(entries[1]).toEqual({
       date: '2025-02-18',
       time: '12:00:01',
+      'cs-method': 'GET',
       'cs-protocol': 'http',
       'x-host-header': 'example.com',
       'cs-uri-stem': '/path2',

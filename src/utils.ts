@@ -11,6 +11,16 @@ export const isUserAgentAllowed = (
   return regex.test(ua);
 };
 
+export const isHttpMethodAllowed = (
+  entry: CloudFrontLogEntry | undefined,
+  allowlist?: readonly string[]
+): boolean => {
+  const method = entry?.['cs-method'];
+  if (!allowlist || allowlist.length === 0) return true;
+  if (!method) return false;
+  return allowlist.includes(method.toUpperCase());
+};
+
 export async function* linesFromStream(
   stream: Readable
 ): AsyncGenerator<string> {

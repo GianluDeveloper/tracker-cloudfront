@@ -26,6 +26,7 @@ const config: MatomoConfig = {
   matomoTimeoutMs: 2000,
   logLevel: 'info',
   userAgentAllowlistRegex: /.*/i,
+  httpMethodAllowlist: ['GET'],
   documentRegex: undefined,
   matomoTokenAuth: undefined
 };
@@ -36,9 +37,9 @@ const smallConfig: MatomoConfig = {
   logLevel: 'debug'
 };
 
-const log = `#Fields: date time cs-protocol x-host-header cs-uri-stem cs-uri-query sc-status time-taken sc-bytes cs(User-Agent)
-2025-02-18 12:00:00 https example.com /path foo=bar 200 0.123 512 Mozilla/5.0
-2025-02-18 12:00:01 http example.com /path2 - 404 0.200 256 curl/8.1.0
+const log = `#Fields: date time cs-method cs-protocol x-host-header cs-uri-stem cs-uri-query sc-status time-taken sc-bytes cs(User-Agent)
+2025-02-18 12:00:00 GET https example.com /path foo=bar 200 0.123 512 Mozilla/5.0
+2025-02-18 12:00:01 GET http example.com /path2 - 404 0.200 256 curl/8.1.0
 `;
 const toAsyncLines = (content: string) =>
   (async function* () {
@@ -76,11 +77,28 @@ describe('buildPayloadsFromLogContent', () => {
     sender.mockRestore();
   });
 
+  it('skips entries with disallowed HTTP methods', async () => {
+    const sender = vi
+      .spyOn(http, 'sendMatomoBatch')
+      .mockResolvedValue(undefined);
+    const mixedMethodsLog = `#Fields: date time cs-method cs-protocol x-host-header cs-uri-stem cs-uri-query sc-status time-taken sc-bytes cs(User-Agent)
+2025-02-18 12:00:00 POST https example.com /submit - 200 0.123 512 Mozilla/5.0
+2025-02-18 12:00:01 GET https example.com /page - 200 0.050 128 Mozilla/5.0
+`;
+    await sendLogContentToMatomo(mixedMethodsLog, config);
+    expect(sender).toHaveBeenCalledTimes(1);
+    expect(sender.mock.calls[0][1]).toHaveLength(1);
+    expect(sender.mock.calls[0][1][0]).toContain(
+      'url=https%3A%2F%2Fexample.com%2Fpage'
+    );
+    sender.mockRestore();
+  });
+
   it('counts pages and documents in summary log', async () => {
     const sender = vi
       .spyOn(http, 'sendMatomoBatch')
       .mockResolvedValue(undefined);
-    const logWithDoc = `${log}2025-02-18 12:00:02 https example.com /file.pdf - 200 0.100 128 AgentX\n`;
+    const logWithDoc = `${log}2025-02-18 12:00:02 GET https example.com /file.pdf - 200 0.100 128 AgentX\n`;
     const docConfig = { ...config, batchSize: 10, matomoTimeoutMs: 1000 };
     await sendLogContentToMatomo(logWithDoc, docConfig);
     const summaryCall = consoleSpies.info.mock.calls.find(
@@ -105,9 +123,9 @@ describe('buildPayloadsFromLogContent', () => {
     const sender = vi
       .spyOn(http, 'sendMatomoBatch')
       .mockResolvedValue(undefined);
-    const badLog = `#Fields: date time cs-protocol x-host-header cs-uri-stem cs-uri-query sc-status time-taken sc-bytes cs(User-Agent)
-2025-02-18 12:00:00 https example.com /path foo=bar 200 0.123 512 Mozilla/5.0
-2025-02-18 12:00:01 https - /missing-host foo=bar 200 0.123 512 Mozilla/5.0
+    const badLog = `#Fields: date time cs-method cs-protocol x-host-header cs-uri-stem cs-uri-query sc-status time-taken sc-bytes cs(User-Agent)
+2025-02-18 12:00:00 GET https example.com /path foo=bar 200 0.123 512 Mozilla/5.0
+2025-02-18 12:00:01 GET https - /missing-host foo=bar 200 0.123 512 Mozilla/5.0
 `;
     await sendLogLinesToMatomo(toAsyncLines(badLog), {
       ...config,
@@ -148,7 +166,7 @@ describe('buildPayloadsFromLogContent', () => {
     const sender = vi
       .spyOn(http, 'sendMatomoBatch')
       .mockResolvedValue(undefined);
-    const threeEntryLog = `${log}2025-02-18 12:00:02 https example.com /extra - 200 0.050 128 AgentX\n`;
+    const threeEntryLog = `${log}2025-02-18 12:00:02 GET https example.com /extra - 200 0.050 128 AgentX\n`;
     const twoBatchConfig = { ...config, batchSize: 2, matomoTimeoutMs: 1000 };
     await sendLogContentToMatomo(threeEntryLog, twoBatchConfig);
     expect(sender).toHaveBeenCalledTimes(2);

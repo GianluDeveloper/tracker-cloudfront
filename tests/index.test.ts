@@ -32,8 +32,8 @@ describe('handler', () => {
   });
 
   it('processes S3 records', async () => {
-    const log = `#Fields: date time cs-protocol x-host-header cs-uri-stem cs-uri-query sc-status time-taken sc-bytes cs(User-Agent)
-2025-02-18 12:00:00 https example.com /path foo=bar 200 0.123 512 Mozilla/5.0
+    const log = `#Fields: date time cs-method cs-protocol x-host-header cs-uri-stem cs-uri-query sc-status time-taken sc-bytes cs(User-Agent)
+2025-02-18 12:00:00 GET https example.com /path foo=bar 200 0.123 512 Mozilla/5.0
 `;
     const originalEnv = { ...process.env };
     process.env.MATOMO_URL = 'https://analytics.example.com';

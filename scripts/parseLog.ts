@@ -3,7 +3,11 @@ import { createGunzip } from 'zlib';
 import { parseCloudFrontLines } from '../src/parser.js';
 import { buildMatomoPayload } from '../src/matomo.js';
 import { buildMatomoRequestPayload } from '../src/http.js';
-import { isUserAgentAllowed, linesFromStream } from '../src/utils.js';
+import {
+  isHttpMethodAllowed,
+  isUserAgentAllowed,
+  linesFromStream
+} from '../src/utils.js';
 import type { MatomoConfig } from '../src/types.js';
 
 const fileLines = async function* (filePath: string) {
@@ -22,6 +26,9 @@ export async function buildRequestsFromFile(
   const requests: string[] = [];
   for await (const entry of parseCloudFrontLines(fileLines(filePath))) {
     if (!isUserAgentAllowed(entry, config.userAgentAllowlistRegex)) {
+      continue;
+    }
+    if (!isHttpMethodAllowed(entry, config.httpMethodAllowlist)) {
       continue;
     }
     const payload = buildMatomoPayload(entry, config);
