@@ -94,6 +94,53 @@ describe('sendMatomoBatch', () => {
     requestSpy.mockRestore();
   });
 
+  it('preserves subdirectory when building Matomo endpoint', async () => {
+    const requestSpy = vi
+      .spyOn(https, 'request')
+      .mockImplementation(
+        (
+          _url: string | URL,
+          _options: https.RequestOptions,
+          callback?: (res: IncomingMessage) => void
+        ) => buildRequestMock(makeResponse(204), callback)
+      );
+
+    await sendMatomoBatch(
+      'https://analytics.example.com/matomo',
+      [{ idsite: 1 }],
+      1000
+    );
+
+    const url = requestSpy.mock.calls[0]?.[0] as string | URL;
+    expect(String(url)).toContain('/matomo/matomo.php');
+
+    requestSpy.mockRestore();
+  });
+
+  it('avoids double matomo.php when base includes it', async () => {
+    const requestSpy = vi
+      .spyOn(https, 'request')
+      .mockImplementation(
+        (
+          _url: string | URL,
+          _options: https.RequestOptions,
+          callback?: (res: IncomingMessage) => void
+        ) => buildRequestMock(makeResponse(204), callback)
+      );
+
+    await sendMatomoBatch(
+      'https://analytics.example.com/matomo.php',
+      [{ idsite: 1 }],
+      1000
+    );
+
+    const url = requestSpy.mock.calls[0]?.[0] as string | URL;
+    expect(String(url)).toContain('/matomo.php');
+    expect(String(url)).not.toContain('/matomo.php/matomo.php');
+
+    requestSpy.mockRestore();
+  });
+
   it('treats 204 with empty body as success', async () => {
     const requestSpy = vi
       .spyOn(https, 'request')

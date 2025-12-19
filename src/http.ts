@@ -27,7 +27,18 @@ export async function sendMatomoBatch(
   logLevel: LogLevel = 'info',
   tokenAuth?: string
 ): Promise<void> {
-  const url = new URL('/matomo.php', matomoUrl);
+  const baseUrl = new URL(matomoUrl);
+  const basePath = baseUrl.pathname || '/';
+  const strippedBasePath = /\/matomo\.php$/i.test(basePath)
+    ? basePath.replace(/\/matomo\.php$/i, '/')
+    : basePath;
+  const normalizedBasePath = strippedBasePath.endsWith('/')
+    ? strippedBasePath
+    : `${strippedBasePath}/`;
+  const url = new URL(baseUrl.toString());
+  url.pathname = `${normalizedBasePath}matomo.php`;
+  url.search = '';
+  url.hash = '';
   const body = JSON.stringify({ requests: payloads });
   const log = createLogger(logLevel);
 

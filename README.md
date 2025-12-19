@@ -10,7 +10,7 @@ Serverless pipeline (TypeScript, Node 24) that consumes CloudFront access logs f
 
 ## Environment Variables
 
-- `MATOMO_URL` (required): Base Matomo URL, e.g. `https://analytics.example.com`.
+- `MATOMO_URL` (required): Base Matomo URL, e.g. `https://analytics.example.com` or `https://analytics.example.com/matomo`.
 - `MATOMO_SITE_ID` (required): Matomo site ID (integer).
 - `MATOMO_TIMEOUT_MS` (optional, default `5000`): HTTP timeout in ms.
 - `MATOMO_TOKEN_AUTH` (optional, recommended): Matomo token; required when `cdt` is older than 24 hours (Matomo bulk import rule). Sent as `Authorization: Bearer <token>`.
