@@ -15,10 +15,33 @@ Serverless pipeline (TypeScript, Node 24) that consumes CloudFront access logs f
 - `MATOMO_TIMEOUT_MS` (optional, default `5000`): HTTP timeout in ms.
 - `MATOMO_TOKEN_AUTH` (optional, recommended): Matomo token; required when `cdt` is older than 24 hours (Matomo bulk import rule). Sent as `Authorization: Bearer <token>`.
 - `BATCH_SIZE` (optional, default `20`): Hit count per Matomo batch.
-- `DOCUMENT_REGEX` (optional): Case-insensitive regex to detect downloads; matching URLs add `download=<url>` to Matomo payloads. This regex runs against the full URL (`protocol://host/path?query`) and defaults to a modern/common set of extensions (e.g., pdf/docx/xlsx/pptx/csv/json/txt/xml, mp3/mp4/webm/mov/avi, zip/gz/gzip/tgz/tar/bz2/tbz/7z/rar, dmg/exe/msi/apk/jar, epub/mobi/azw3, md5/sig).
+- `DOCUMENT_REGEX` (optional): Case-insensitive regex to detect downloads; matching URLs add `download=<url>` to Matomo payloads. This regex runs against the full URL (`protocol://host/path?query`) and defaults to a modern/common set of extensions:
+  - Documents: `.pdf`, `.doc`, `.docx`, `.xls`, `.xlsx`, `.ppt`, `.pptx`
+  - Data/text: `.csv`, `.json`, `.txt`, `.xml`
+  - Ebooks: `.epub`, `.mobi`, `.azw3`
+  - Media (audio/video): `.mp3`, `.mp4`, `.mpeg`, `.mpg`, `.webm`, `.mov`, `.avi`, `.ogg`, `.wav`, `.flac`
+  - Archives: `.zip`, `.gz`, `.gzip`, `.tgz`, `.tar`, `.bz2`, `.tbz`, `.7z`, `.rar`
+  - Installers/binaries: `.dmg`, `.exe`, `.msi`, `.apk`, `.jar`
+  - Hashes/signatures: `.md5`, `.sig`
+
+  Example: `^[^?]+\\.(?:pdf|zip|docx?)(?:\\?|$)`
+
 - `LOG_LEVEL` (optional, default `warn`): `silent|error|warn|info|debug`.
 - `USER_AGENT_ALLOWLIST_REGEX` (optional): Case-insensitive regex to permit user agents; non-matching entries are skipped. Defaults to an allowlist for `ChatGPT-User|MistralAI-User|Gemini-Deep-Research|Claude-User|Perplexity-User|Google-NotebookLM|Devin`.
 - `HTTP_METHOD_ALLOWLIST` (optional, default `GET`): Comma-separated list of HTTP methods to track (e.g. `GET,POST`); empty/unset uses the default. Requires `cs-method` to be present in the parsed log entry (via CloudFront `#Fields` or default field order).
+- `URL_EXCLUDE_REGEX` (optional): Case-insensitive regex to skip tracking for matching URLs. This regex runs against the full URL (`protocol://host/path?query`) and defaults to excluding common static assets and non-page resources:
+  - Frontend assets: `.css`, `.js`, `.mjs`
+  - Source maps: `.map`
+  - Data/config: `.json`, `.xml`, `.webmanifest`, `.manifest`
+  - Feeds: `.rss`, `.atom`
+  - WebAssembly: `.wasm`
+  - Text: `.txt`
+  - Images: `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.avif`, `.svg`, `.ico`, `.bmp`, `.tif`, `.tiff`
+  - Fonts: `.woff`, `.woff2`, `.ttf`, `.otf`, `.eot`
+
+  Example: `^[^?]+\\.(?:css|js|png)(?:\\?|$)`
+
+  Note: If a URL matches `URL_EXCLUDE_REGEX`, it is skipped even if it also matches `DOCUMENT_REGEX` (i.e. it will not be tracked as a download).
 
 ## Build & Package
 
@@ -89,7 +112,10 @@ Example CloudFront logging fields (set on the distribution) to cover required/op
   - Required: `idsite`, `rec:1`, `recMode:1`, `url` (protocol+host+path+query), `cdt` (`Y-m-d H:i:s`), `ua`, `source:'CloudFront'`.
   - Optional: `http_status`, `bw_bytes`, `pf_srv`.
 - Filters requests by user agent using `USER_AGENT_ALLOWLIST_REGEX`; entries are skipped silently before payload assembly when the allowlist is configured (defaults on). If no allowlist is set, empty user agents are allowed.
-- Filters requests by HTTP method using `HTTP_METHOD_ALLOWLIST` (defaults to `GET` only).
+  <<<<<<< HEAD
+- # Filters requests by HTTP method using `HTTP_METHOD_ALLOWLIST` (defaults to `GET` only).
+- Skips entries whose URL matches `URL_EXCLUDE_REGEX` (defaults to common static assets like js/css, images, fonts, source maps).
+  > > > > > > > a782973 (Exclude static files (css, js, images, ...) by default)
 - Batches requests (size `BATCH_SIZE`) and POSTs `{ "requests": ["?param=value", ...] }` to `/matomo.php` with retries/backoff and structured logs.
 - Emits a processing summary with sent and skipped counts.
 

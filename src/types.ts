@@ -19,6 +19,7 @@ export interface MatomoConfig {
   userAgentAllowlistRegex?: RegExp;
   httpMethodAllowlist?: string[];
   documentRegex?: RegExp;
+  urlExcludeRegex?: RegExp;
 }
 
 export interface MatomoPayload {

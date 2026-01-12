@@ -24,6 +24,9 @@ describe('getConfig', () => {
     expect(config.documentRegex).toEqual(
       /^[^?]+\.(?:pdf|docx?|xlsx?|pptx?|csv|json|txt|xml|epub|mobi|azw3|mp3|mp4|mpe?g|webm|mov|avi|ogg|wav|flac|zip|gz|gzip|tgz|tar|bz2|tbz|7z|rar|dmg|exe|msi|apk|jar|md5|sig)(?:\?|$)/i
     );
+    expect(config.urlExcludeRegex).toEqual(
+      /^[^?]+\.(?:css|js|mjs|map|json|xml|webmanifest|manifest|png|jpe?g|gif|webp|avif|svg|ico|bmp|tiff?|woff2?|ttf|otf|eot|rss|atom|wasm|txt)(?:\?|$)/i
+    );
   });
 
   it('uses optional overrides', () => {
@@ -35,7 +38,8 @@ describe('getConfig', () => {
       LOG_LEVEL: 'debug',
       USER_AGENT_ALLOWLIST_REGEX: 'CustomBot',
       HTTP_METHOD_ALLOWLIST: 'GET, HEAD',
-      DOCUMENT_REGEX: '\\.custom$'
+      DOCUMENT_REGEX: '\\.custom$',
+      URL_EXCLUDE_REGEX: '\\.skip$'
     });
     expect(config).toMatchObject({
       matomoUrl: baseEnv.MATOMO_URL,
@@ -48,6 +52,7 @@ describe('getConfig', () => {
     expect(config.userAgentAllowlistRegex).toEqual(/CustomBot/i);
     expect(config.httpMethodAllowlist).toEqual(['GET', 'HEAD']);
     expect(config.documentRegex).toEqual(/\.custom$/i);
+    expect(config.urlExcludeRegex).toEqual(/\.skip$/i);
   });
 
   it('throws on invalid regex config', () => {
@@ -60,6 +65,9 @@ describe('getConfig', () => {
     expect(() =>
       getConfig({ ...baseEnv, HTTP_METHOD_ALLOWLIST: 'GET,$$' })
     ).toThrow(/Invalid HTTP_METHOD_ALLOWLIST/);
+    expect(() => getConfig({ ...baseEnv, URL_EXCLUDE_REGEX: '[' })).toThrow(
+      /Invalid URL_EXCLUDE_REGEX/
+    );
   });
 
   it('throws when MATOMO_URL is missing', () => {

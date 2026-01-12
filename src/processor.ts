@@ -19,6 +19,7 @@ export async function sendLogLinesToMatomo(
   let documents = 0;
   const allowRegex = config.userAgentAllowlistRegex;
   const httpMethodAllowlist = config.httpMethodAllowlist;
+  const urlExcludeRegex = config.urlExcludeRegex;
   try {
     for await (const entry of parseCloudFrontLines(lines, log)) {
       if (!isUserAgentAllowed(entry, allowRegex)) {
@@ -31,6 +32,10 @@ export async function sendLogLinesToMatomo(
       }
       try {
         const payload = buildMatomoPayload(entry, config);
+        if (urlExcludeRegex && urlExcludeRegex.test(payload.url)) {
+          skipped += 1;
+          continue;
+        }
         if (payload.download) {
           documents += 1;
         } else {

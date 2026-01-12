@@ -195,4 +195,26 @@ describe('buildPayloadsFromLogContent', () => {
     }
     sender.mockRestore();
   });
+
+  it('skips entries matching url exclude regex', async () => {
+    const sender = vi
+      .spyOn(http, 'sendMatomoBatch')
+      .mockResolvedValue(undefined);
+    const assetLog = `#Fields: date time cs-method cs-protocol x-host-header cs-uri-stem cs-uri-query sc-status time-taken sc-bytes cs(User-Agent)
+2025-02-18 12:00:00 GET https example.com /app.js v=1 200 0.123 512 Mozilla/5.0
+2025-02-18 12:00:01 GET https example.com /styles.css - 200 0.100 512 Mozilla/5.0
+2025-02-18 12:00:02 GET https example.com /page - 200 0.050 512 Mozilla/5.0
+`;
+    const filteredConfig = {
+      ...config,
+      urlExcludeRegex: /^[^?]+\.(?:js|css)(?:\?|$)/i
+    };
+    await sendLogContentToMatomo(assetLog, filteredConfig);
+    expect(sender).toHaveBeenCalledTimes(1);
+    expect(sender.mock.calls[0][1]).toHaveLength(1);
+    expect(sender.mock.calls[0][1][0]).toContain(
+      'url=https%3A%2F%2Fexample.com%2Fpage'
+    );
+    sender.mockRestore();
+  });
 });
