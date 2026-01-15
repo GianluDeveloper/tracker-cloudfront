@@ -112,10 +112,8 @@ Example CloudFront logging fields (set on the distribution) to cover required/op
   - Required: `idsite`, `rec:1`, `recMode:1`, `url` (protocol+host+path+query), `cdt` (`Y-m-d H:i:s`), `ua`, `source:'CloudFront'`.
   - Optional: `http_status`, `bw_bytes`, `pf_srv`.
 - Filters requests by user agent using `USER_AGENT_ALLOWLIST_REGEX`; entries are skipped silently before payload assembly when the allowlist is configured (defaults on). If no allowlist is set, empty user agents are allowed.
-  <<<<<<< HEAD
-- # Filters requests by HTTP method using `HTTP_METHOD_ALLOWLIST` (defaults to `GET` only).
+- Filters requests by HTTP method using `HTTP_METHOD_ALLOWLIST` (defaults to `GET` only).
 - Skips entries whose URL matches `URL_EXCLUDE_REGEX` (defaults to common static assets like js/css, images, fonts, source maps).
-  > > > > > > > a782973 (Exclude static files (css, js, images, ...) by default)
 - Batches requests (size `BATCH_SIZE`) and POSTs `{ "requests": ["?param=value", ...] }` to `/matomo.php` with retries/backoff and structured logs.
 - Emits a processing summary with sent and skipped counts.
 
