@@ -2,6 +2,7 @@
   "name": "tracker-cloudfront",
   "version": "0.1.0",
   "description": "AWS Lambda to ingest CloudFront logs and send hits to Matomo",
+  "license": "BSD-3-Clause",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
