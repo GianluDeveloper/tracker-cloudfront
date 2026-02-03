@@ -18,7 +18,7 @@ describe('getConfig', () => {
       logLevel: 'warn'
     });
     expect(config.userAgentAllowlistRegex).toEqual(
-      /(?:ChatGPT-User|MistralAI-User|Gemini-Deep-Research|Claude-User|Perplexity-User|Google-NotebookLM|Devin)/i
+      /(?:ChatGPT-User|MistralAI-User|Gemini-Deep-Research|Claude-User|Perplexity-User|Google-NotebookLM)/i
     );
     expect(config.httpMethodAllowlist).toEqual(['GET']);
     expect(config.documentRegex).toEqual(
