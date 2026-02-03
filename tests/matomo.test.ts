@@ -37,7 +37,7 @@ describe('buildMatomoPayload', () => {
       ua: 'Mozilla/5.0',
       http_status: 200,
       bw_bytes: 512,
-      pf_srv: 0.123
+      pf_srv: 123
     });
   });
 

@@ -10,10 +10,11 @@ const toIntIfNumeric = (value?: string) => {
   return Number.isNaN(parsed) ? value : parsed;
 };
 
-const toFloatIfNumeric = (value?: string) => {
+const secondsToMsIntIfNumeric = (value?: string) => {
   if (value === undefined) return undefined;
   const parsed = Number.parseFloat(value);
-  return Number.isNaN(parsed) ? value : parsed;
+  if (Number.isNaN(parsed)) return value;
+  return Math.round(parsed * 1000);
 };
 
 export function buildMatomoPayload(
@@ -68,7 +69,7 @@ export function buildMatomoPayload(
     payload.bw_bytes = toIntIfNumeric(entry['sc-bytes']);
   }
   if (entry['time-taken']) {
-    payload.pf_srv = toFloatIfNumeric(entry['time-taken']);
+    payload.pf_srv = secondsToMsIntIfNumeric(entry['time-taken']);
   }
   if (documentRegex && documentRegex.test(url)) {
     payload.download = url;
