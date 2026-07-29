@@ -17,7 +17,8 @@ const defaultUserAgentPatterns = [
   'Gemini-Deep-Research',
   'Claude-User',
   'Perplexity-User',
-  'Google-NotebookLM'
+  'Google-NotebookLM',
+  'Google-GeminiNotebook'
 ];
 const defaultAllowlistPattern = `(?:${defaultUserAgentPatterns
   .map(escapeRegex)
