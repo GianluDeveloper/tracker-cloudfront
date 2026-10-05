@@ -13,6 +13,7 @@ describe('getConfig', () => {
       matomoUrl: baseEnv.MATOMO_URL,
       matomoSiteId: 42,
       matomoTokenAuth: undefined,
+      matomoRecMode: 1,
       cloudFrontDefaultProtocol: undefined,
       cloudFrontDefaultHost: undefined,
       batchSize: 20,
@@ -49,6 +50,7 @@ describe('getConfig', () => {
     const config = getConfig({
       ...baseEnv,
       MATOMO_TOKEN_AUTH: 'secret',
+      MATOMO_REC_MODE: ' 2 ',
       CLOUDFRONT_DEFAULT_PROTOCOL: ' https ',
       CLOUDFRONT_DEFAULT_HOST: ' www.example.com ',
       BATCH_SIZE: '10',
@@ -63,6 +65,7 @@ describe('getConfig', () => {
       matomoUrl: baseEnv.MATOMO_URL,
       matomoSiteId: 42,
       matomoTokenAuth: 'secret',
+      matomoRecMode: 2,
       cloudFrontDefaultProtocol: 'https',
       cloudFrontDefaultHost: 'www.example.com',
       batchSize: 10,
@@ -74,6 +77,38 @@ describe('getConfig', () => {
     expect(config.documentRegex).toEqual(/\.custom$/i);
     expect(config.urlExcludeRegex).toEqual(/\.skip$/i);
   });
+
+  it('allows browser user agents when automatic mode is enabled', () => {
+    const config = getConfig({ ...baseEnv, MATOMO_REC_MODE: '2' });
+    expect(config.matomoRecMode).toBe(2);
+    expect(
+      config.userAgentAllowlistRegex?.test('Mozilla/5.0 Safari/604.1')
+    ).toBe(true);
+    expect(config.userAgentAllowlistRegex?.test('ChatGPT-User/1.0')).toBe(true);
+    expect(
+      getConfig(baseEnv).userAgentAllowlistRegex?.test(
+        'Mozilla/5.0 Safari/604.1'
+      )
+    ).toBe(false);
+  });
+
+  it.each(['', ' ', '1'])(
+    'keeps bot-only mode for MATOMO_REC_MODE=%j',
+    (mode) => {
+      expect(
+        getConfig({ ...baseEnv, MATOMO_REC_MODE: mode }).matomoRecMode
+      ).toBe(1);
+    }
+  );
+
+  it.each(['0', '3', 'auto', '2invalid', '2.0'])(
+    'rejects invalid MATOMO_REC_MODE=%j',
+    (mode) => {
+      expect(() => getConfig({ ...baseEnv, MATOMO_REC_MODE: mode })).toThrow(
+        /Invalid MATOMO_REC_MODE/
+      );
+    }
+  );
 
   it('treats blank CloudFront fallbacks as unset', () => {
     const config = getConfig({

@@ -1,5 +1,6 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { sendLogLinesToMatomo } from '../src/processor.js';
+import { getConfig } from '../src/config.js';
 import * as http from '../src/http.js';
 import { sendLogContentToMatomo } from './helpers/processorHelpers.js';
 import {
@@ -47,6 +48,59 @@ const toAsyncLines = (content: string) =>
   })();
 
 describe('buildPayloadsFromLogContent', () => {
+  it.each([
+    { mode: undefined, userAgents: ['ChatGPT-User/1.0'], expectedRecMode: '1' },
+    {
+      mode: '2',
+      userAgents: ['Mozilla/5.0%20(iPhone)%20Safari/604.1', 'ChatGPT-User/1.0'],
+      expectedRecMode: '2'
+    }
+  ])(
+    'sends the expected visits for recording mode $mode',
+    async ({ mode, userAgents, expectedRecMode }) => {
+      const sender = vi
+        .spyOn(http, 'sendMatomoBatch')
+        .mockResolvedValue(undefined);
+      const defaultConfig = getConfig({
+        MATOMO_URL: 'https://analytics.example.com',
+        MATOMO_SITE_ID: '1',
+        MATOMO_REC_MODE: mode,
+        CLOUDFRONT_DEFAULT_PROTOCOL: 'https',
+        CLOUDFRONT_DEFAULT_HOST: 'example.com'
+      });
+      const baseEntry = {
+        date: '2026-10-05',
+        time: '10:00:00',
+        'cs-method': 'GET',
+        'cs-uri-stem': '/page',
+        'cs-uri-query': '-',
+        'cs(User-Agent)': 'Mozilla/5.0%20(iPhone)%20Safari/604.1'
+      };
+      const entries = [
+        baseEntry,
+        { ...baseEntry, 'cs(User-Agent)': 'ChatGPT-User/1.0' },
+        { ...baseEntry, 'cs-uri-stem': '/app.js' },
+        { ...baseEntry, 'cs-method': 'POST' }
+      ];
+      await sendLogContentToMatomo(
+        entries.map((entry) => JSON.stringify(entry)).join('\n'),
+        defaultConfig
+      );
+      expect(sender).toHaveBeenCalledTimes(1);
+      const requests = sender.mock.calls[0][1] as string[];
+      expect(requests).toHaveLength(userAgents.length);
+      const params = requests.map(
+        (request) => new URLSearchParams(request.slice(1))
+      );
+      expect(params.map((request) => request.get('ua'))).toEqual(userAgents);
+      for (const request of params) {
+        expect(request.get('recMode')).toBe(expectedRecMode);
+        expect(request.get('url')).toBe('https://example.com/page');
+      }
+      sender.mockRestore();
+    }
+  );
+
   it('batches entries from async line iterator with provided timeout and log level', async () => {
     const sender = vi
       .spyOn(http, 'sendMatomoBatch')

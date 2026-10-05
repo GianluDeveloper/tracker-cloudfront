@@ -55,7 +55,7 @@ export function buildMatomoPayload(
   const payload: MatomoPayload = {
     idsite: config.matomoSiteId,
     rec: 1,
-    recMode: 1,
+    recMode: config.matomoRecMode ?? 1,
     url,
     source: 'CloudFront',
     cdt,

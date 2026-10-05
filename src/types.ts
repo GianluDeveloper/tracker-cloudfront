@@ -13,6 +13,7 @@ export interface MatomoConfig {
   matomoUrl: string;
   matomoSiteId: number;
   matomoTokenAuth?: string;
+  matomoRecMode?: 1 | 2;
   cloudFrontDefaultProtocol?: string;
   cloudFrontDefaultHost?: string;
   batchSize: number;
@@ -28,7 +29,7 @@ export interface MatomoPayload {
   [key: string]: string | number | boolean | undefined;
   idsite: number;
   rec: 1;
-  recMode: 1;
+  recMode: 1 | 2;
   url: string;
   source: 'CloudFront';
   cdt: string;

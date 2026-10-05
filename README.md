@@ -14,6 +14,7 @@ Serverless pipeline (TypeScript, Node 24) that consumes CloudFront access logs f
 - `MATOMO_SITE_ID` (required): Matomo site ID (integer).
 - `MATOMO_TIMEOUT_MS` (optional, default `5000`): HTTP timeout in ms.
 - `MATOMO_TOKEN_AUTH` (optional, recommended): Matomo token; required when `cdt` is older than 24 hours (Matomo bulk import rule). Sent as `Authorization: Bearer <token>`.
+- `MATOMO_REC_MODE` (optional, default `1`): `1` tracks only supported AI bots. Set `2` to enable automatic recording of normal visits/actions and supported AI bots, routed by Matomo to their respective reports. In automatic mode, the default user agent filter permits all non-empty user agents. Other values are rejected.
 - `CLOUDFRONT_DEFAULT_PROTOCOL` (optional): Fallback protocol, e.g. `https`, used when a log entry has no `cs-protocol` or its value is empty/`-`.
 - `CLOUDFRONT_DEFAULT_HOST` (optional): Fallback host, e.g. `www.example.com` (without protocol or path), used when a log entry has no `x-host-header` or its value is empty/`-`. Values present in the log always take precedence over these fallbacks. If either URL field is missing and its fallback is unset, the entry cannot be tracked.
 - `BATCH_SIZE` (optional, default `20`): Hit count per Matomo batch.
@@ -29,7 +30,7 @@ Serverless pipeline (TypeScript, Node 24) that consumes CloudFront access logs f
   Example: `^[^?]+\\.(?:pdf|zip|docx?)(?:\\?|$)`
 
 - `LOG_LEVEL` (optional, default `warn`): `silent|error|warn|info|debug`.
-- `USER_AGENT_ALLOWLIST_REGEX` (optional): Case-insensitive regex to permit user agents; non-matching entries are skipped. Defaults to an allowlist for `ChatGPT-User|MistralAI-User|Gemini-Deep-Research|Claude-User|Perplexity-User|Google-NotebookLM|Google-GeminiNotebook`.
+- `USER_AGENT_ALLOWLIST_REGEX` (optional): Case-insensitive regex to permit user agents; non-matching entries are skipped. In bot-only mode (default), the allowlist is `ChatGPT-User|MistralAI-User|Gemini-Deep-Research|Claude-User|Perplexity-User|Google-NotebookLM|Google-GeminiNotebook`. With `MATOMO_REC_MODE=2`, it defaults to `.*`, permitting all non-empty user agents, including normal browsers and AI bots. Explicitly configured patterns still restrict tracking in either mode; remove an existing AI-only pattern or set it to `.*` to include normal visits.
 - `HTTP_METHOD_ALLOWLIST` (optional, default `GET`): Comma-separated list of HTTP methods to track (e.g. `GET,POST`); empty/unset uses the default. Requires `cs-method` to be present in the parsed log entry (via CloudFront `#Fields` or default field order).
 - `URL_EXCLUDE_REGEX` (optional): Case-insensitive regex to skip tracking for matching URLs. This regex runs against the full URL (`protocol://host/path?query`) and defaults to excluding common static assets and non-page resources:
   - Frontend assets: `.css`, `.js`, `.mjs`
@@ -111,9 +112,10 @@ Example CloudFront logging fields (set on the distribution) to cover required/op
 
 - Reads S3 objects as gzip streams, splits into lines, and accepts either whitespace-separated CloudFront logs (with an optional `#Fields` header) or JSON Lines / NDJSON (one flat JSON object per line). Numeric JSON values are converted to strings; `-` and `null` become empty strings. Malformed lines are skipped and logged.
 - Maps fields to Matomo payload:
-  - Required: `idsite`, `rec:1`, `recMode:1`, `url` (protocol+host+path+query), `cdt` (`Y-m-d H:i:s`), `ua`, `source:'CloudFront'`.
+  - Required: `idsite`, `rec:1`, `recMode` (from `MATOMO_REC_MODE`, default `1`), `url` (protocol+host+path+query), `cdt` (`Y-m-d H:i:s`), `ua`, `source:'CloudFront'`.
   - Optional: `http_status`, `bw_bytes`, `pf_srv`.
-- Filters requests by user agent using `USER_AGENT_ALLOWLIST_REGEX`; entries are skipped silently before payload assembly when the allowlist is configured (defaults on). If no allowlist is set, empty user agents are allowed.
+- Uses bot-only recording by default (`recMode=1`). When explicitly enabled with `MATOMO_REC_MODE=2`, normal requests are processed as visits/actions, while supported AI bots are processed separately in AI Chatbot reports. This does not force tracking of other crawlers excluded by Matomo. See the [Matomo Tracking API](https://developer.matomo.org/api-reference/tracking-api#tracking-bots).
+- Filters requests by user agent using `USER_AGENT_ALLOWLIST_REGEX`; the default is an AI bot allowlist in bot-only mode and all non-empty user agents in automatic mode. Non-matching or empty user agents are skipped before payload assembly.
 - Filters requests by HTTP method using `HTTP_METHOD_ALLOWLIST` (defaults to `GET` only).
 - Skips entries whose URL matches `URL_EXCLUDE_REGEX` (defaults to common static assets like js/css, images, fonts, source maps).
 - Batches requests (size `BATCH_SIZE`) and POSTs `{ "requests": ["?param=value", ...] }` to `/matomo.php` with retries/backoff and structured logs.
@@ -143,13 +145,13 @@ For JSON Lines that omit protocol and host:
 ```sh
 MATOMO_URL=https://analytics.example.com \
 MATOMO_SITE_ID=1 \
+MATOMO_REC_MODE=2 \
 CLOUDFRONT_DEFAULT_PROTOCOL=https \
 CLOUDFRONT_DEFAULT_HOST=www.example.com \
-USER_AGENT_ALLOWLIST_REGEX='.*' \
 npm run parse:log -- path/to/cloudfront.jsonl
 ```
 
-The local command also accepts `.jsonl.gz` and only generates requests; it does not send them. For the S3/Lambda pipeline, upload gzip-compressed logs. Set `USER_AGENT_ALLOWLIST_REGEX='.*'` only if you want to include all non-empty user agents instead of the default AI bot allowlist. The runtime still applies `URL_EXCLUDE_REGEX`, so XML sitemaps are excluded by default.
+The local command also accepts `.jsonl.gz` and only generates requests; it does not send them. For the S3/Lambda pipeline, upload gzip-compressed logs. The runtime still applies `URL_EXCLUDE_REGEX`, so XML sitemaps are excluded by default.
 
 ## Tests & Lint
 

@@ -71,9 +71,15 @@ export function getConfig(
   const batchSize = toInt(env.BATCH_SIZE, 20) ?? 20;
   const matomoTimeoutMs = toInt(env.MATOMO_TIMEOUT_MS, 5000) ?? 5000;
   const matomoTokenAuth = env.MATOMO_TOKEN_AUTH || undefined;
+  const recMode = env.MATOMO_REC_MODE?.trim() || '1';
+  if (recMode !== '1' && recMode !== '2') {
+    throw new Error('Invalid MATOMO_REC_MODE. Expected 1 (bots) or 2 (auto).');
+  }
+  const matomoRecMode = recMode === '2' ? 2 : 1;
   const logLevel = (env.LOG_LEVEL || 'warn').toLowerCase() as LogLevel;
   const allowlistPattern =
-    env.USER_AGENT_ALLOWLIST_REGEX || defaultAllowlistPattern;
+    env.USER_AGENT_ALLOWLIST_REGEX ||
+    (matomoRecMode === 2 ? '.*' : defaultAllowlistPattern);
   const httpMethodAllowlist = parseHttpMethodAllowlist(
     env.HTTP_METHOD_ALLOWLIST,
     defaultHttpMethodAllowlist
@@ -106,6 +112,7 @@ export function getConfig(
     matomoUrl,
     matomoSiteId,
     matomoTokenAuth,
+    matomoRecMode,
     cloudFrontDefaultProtocol:
       env.CLOUDFRONT_DEFAULT_PROTOCOL?.trim() || undefined,
     cloudFrontDefaultHost: env.CLOUDFRONT_DEFAULT_HOST?.trim() || undefined,
