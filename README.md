@@ -46,6 +46,43 @@ Serverless pipeline (TypeScript, Node 24) that consumes CloudFront access logs f
 
   Note: If a URL matches `URL_EXCLUDE_REGEX`, it is skipped even if it also matches `DOCUMENT_REGEX` (i.e. it will not be tracked as a download).
 
+## Recording Modes
+
+Automatic recording is enabled only by setting `MATOMO_REC_MODE=2` in the Lambda environment variables. Leaving the variable unset, empty, or set to `1` preserves AI bot-only tracking.
+
+| `MATOMO_REC_MODE` | Requests sent by the default user agent filter | Matomo recording mode                                      |
+| ----------------- | ---------------------------------------------- | ---------------------------------------------------------- |
+| Unset or `1`      | Supported AI bot user agents                   | Bot only (`recMode=1`)                                     |
+| `2`               | All non-empty user agents, including browsers  | Automatic visits/actions and AI bot tracking (`recMode=2`) |
+
+To include normal visits alongside AI bots, configure the Lambda with:
+
+```dotenv
+MATOMO_URL=https://analytics.example.com
+MATOMO_SITE_ID=1
+MATOMO_REC_MODE=2
+CLOUDFRONT_DEFAULT_PROTOCOL=https
+CLOUDFRONT_DEFAULT_HOST=www.example.com
+LOG_LEVEL=info
+```
+
+Replace the Matomo URL, site ID, and website host with your values. If `USER_AGENT_ALLOWLIST_REGEX` is already configured to allow only AI bots, remove that override or set it to `.*`; an explicit filter takes precedence in both modes. `GET` filtering and static asset exclusions still apply in automatic mode.
+
+Normal visits appear in the standard visitor reports. Supported AI chatbot requests appear separately in **AI Assistants → AI Chatbots Overview**. For self-hosted Matomo, activate the `BotTracking` plugin to use the AI Chatbot reports. Use a Matomo version that supports the selected recording mode; see the [Tracking API](https://developer.matomo.org/api-reference/tracking-api#tracking-bots) and [AI Chatbot report setup](https://matomo.org/faq/reports/ai-chatbots-overview-report/).
+
+## JSON Lines Logs
+
+JSON Lines / NDJSON logs contain one JSON object per line, without an enclosing array or commas between lines. For example:
+
+```jsonl
+{"date":"2026-10-05","time":"10:00:00","cs-method":"GET","cs-uri-stem":"/chi-sono/","cs-uri-query":"-","cs(User-Agent)":"Mozilla/5.0%20(iPhone)%20Safari/604.1","sc-status":"200","sc-bytes":"4987","time-taken":"0.722"}
+{"date":"2026-10-05","time":"10:00:01","cs-method":"GET","cs-uri-stem":"/","cs-uri-query":"-","cs(User-Agent)":"ChatGPT-User/1.0","sc-status":"200"}
+```
+
+These entries omit protocol and host, so set `CLOUDFRONT_DEFAULT_PROTOCOL` and `CLOUDFRONT_DEFAULT_HOST` as shown above. If a log entry contains `cs-protocol` or `x-host-header`, those values take precedence over the corresponding fallback. A missing URL field without a fallback causes the entry to be skipped.
+
+Save local files as `.jsonl` or `.jsonl.gz`. S3 objects consumed by the Lambda must be gzip-compressed; configure the S3 trigger to include their prefix and `.gz` suffix.
+
 ## Build & Package
 
 The Lambda is bundled with esbuild from `src/index.ts` (includes `@aws-sdk/client-s3`):
@@ -54,22 +91,23 @@ The Lambda is bundled with esbuild from `src/index.ts` (includes `@aws-sdk/clien
 npm install
 npm run typecheck   # optional: static checks
 npm run build
+zip -j dist/index.zip dist/index.js
 ```
 
-Outputs `dist/index.js` (single bundled file). Upload this file as your Lambda handler source (entry: `index.handler`). If your deployment method requires an archive, zip `dist/index.js` yourself before upload.
+`npm run build` outputs `dist/index.js` (a single bundled file). The separate `zip` command creates `dist/index.zip` with `index.js` at the archive root, ready to upload to AWS Lambda. The ZIP command requires the `zip` utility. Generated files under `dist/` are ignored by Git.
 
 ## Deploy (manual outline)
 
 1. Create a Lambda (Node.js 24) with handler `index.handler`.
 2. Set environment variables above.
-3. Upload `dist/index.js` from `npm run build`.
+3. Upload `dist/index.zip` from the build and packaging commands above.
 4. Add an S3 trigger on your CloudFront log bucket for `ObjectCreated:*`.
 5. Grant the Lambda permissions to read the bucket and write CloudWatch Logs.
 
 Notes:
 
 - The bundle is CommonJS; use the handler `index.handler`.
-- Include the bundled file only (no `node_modules` needed). If your deployment tooling expects a zip, `zip -j lambda.zip dist/index.js` and upload that archive.
+- Include the bundled file only (no `node_modules` needed). Rebuild and recreate the ZIP after code changes before uploading an updated Lambda.
 
 Example IAM policy for the Lambda execution role (adjust bucket ARN):
 
@@ -129,6 +167,19 @@ Structured logs with `LOG_LEVEL` gating:
 - Parser: detected `#Fields`, malformed line count.
 - Processor: each batch flush (index/size).
 - Sender: start/success/non-2xx/timeout/retry/final failure with status/backoff.
+
+### Troubleshooting missing Matomo data
+
+Set `LOG_LEVEL=info` to see S3 line counts, batch sends, and the processing summary. `sent`, `pages`, and `documents` count entries assembled by the Lambda; they do not count records stored by Matomo. `skipped` counts entries rejected by filters or payload assembly, while malformed lines are reported separately by the parser.
+
+An HTTP 200 response logged as `Matomo batch send success` does not prove that every entry was recorded. The sender also accepts an empty HTTP 200 response body and labels it `success`.
+
+If batches are sent but no data appears:
+
+1. For browser visits, confirm the deployed bundle contains support for `MATOMO_REC_MODE` and set that variable to `2`. Expanding `USER_AGENT_ALLOWLIST_REGEX` alone does not enable visit recording in bot-only mode.
+2. Check the selected Matomo site's ID against `MATOMO_SITE_ID`, and select the date of the requests in the source logs. The `cdt` parameter preserves their UTC timestamp, rather than using the Lambda invocation time.
+3. Look in the appropriate report: standard visitor reports for browser traffic, AI Chatbot reports for supported AI bots. Check the `BotTracking` plugin for self-hosted AI reports.
+4. Check for explicit user agent filters, excluded URLs, and missing protocol/host fallbacks. Matomo may also exclude requests according to its own bot and traffic filtering rules.
 
 ## Local Debugging
 
