@@ -1,11 +1,13 @@
 import type { Readable } from 'stream';
 import type { CloudFrontLogEntry } from './types.js';
+import { getCloudFrontUserAgent } from './userAgent.js';
 
 export const isUserAgentAllowed = (
   entry: CloudFrontLogEntry | undefined,
-  regex?: RegExp
+  regex?: RegExp,
+  decodeUserAgent = false
 ): boolean => {
-  const ua = entry?.['cs(User-Agent)'];
+  const ua = getCloudFrontUserAgent(entry, decodeUserAgent);
   if (!regex) return true;
   if (!ua) return false;
   return regex.test(ua);

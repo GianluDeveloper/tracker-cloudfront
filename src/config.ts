@@ -85,6 +85,15 @@ export function getConfig(
       'CLOUDFRONT_BEHIND_CLOUDFLARE requires MATOMO_TOKEN_AUTH to override visitor IPs.'
     );
   }
+  const decodeUserAgent =
+    env.CLOUDFRONT_DECODE_USER_AGENT?.trim().toLowerCase() || 'false';
+  if (!['true', 'false', '1', '0'].includes(decodeUserAgent)) {
+    throw new Error(
+      'Invalid CLOUDFRONT_DECODE_USER_AGENT. Expected true/false or 1/0.'
+    );
+  }
+  const cloudFrontDecodeUserAgent =
+    decodeUserAgent === 'true' || decodeUserAgent === '1';
   const recMode = env.MATOMO_REC_MODE?.trim() || '1';
   if (recMode !== '1' && recMode !== '2') {
     throw new Error('Invalid MATOMO_REC_MODE. Expected 1 (bots) or 2 (auto).');
@@ -131,6 +140,7 @@ export function getConfig(
       env.CLOUDFRONT_DEFAULT_PROTOCOL?.trim() || undefined,
     cloudFrontDefaultHost: env.CLOUDFRONT_DEFAULT_HOST?.trim() || undefined,
     cloudFrontBehindCloudflare,
+    cloudFrontDecodeUserAgent,
     batchSize,
     matomoTimeoutMs,
     logLevel,

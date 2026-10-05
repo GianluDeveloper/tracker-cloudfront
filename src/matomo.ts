@@ -4,6 +4,7 @@ import type {
   MatomoPayload
 } from './types.js';
 import { getCloudFrontClientIp } from './clientIp.js';
+import { getCloudFrontUserAgent } from './userAgent.js';
 
 const toIntIfNumeric = (value?: string) => {
   if (value === undefined) return undefined;
@@ -47,7 +48,10 @@ export function buildMatomoPayload(
     : `${protocol}://${host}${path}`;
 
   const cdt = `${date} ${time}`;
-  const userAgent = entry['cs(User-Agent)'] || '';
+  const userAgent = getCloudFrontUserAgent(
+    entry,
+    config.cloudFrontDecodeUserAgent
+  );
 
   if (!protocol || !host) {
     throw new Error('Missing required protocol or host in log entry');

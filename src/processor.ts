@@ -22,7 +22,9 @@ export async function sendLogLinesToMatomo(
   const urlExcludeRegex = config.urlExcludeRegex;
   try {
     for await (const entry of parseCloudFrontLines(lines, log)) {
-      if (!isUserAgentAllowed(entry, allowRegex)) {
+      if (
+        !isUserAgentAllowed(entry, allowRegex, config.cloudFrontDecodeUserAgent)
+      ) {
         skipped += 1;
         continue;
       }

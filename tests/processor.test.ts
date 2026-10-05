@@ -48,6 +48,145 @@ const toAsyncLines = (content: string) =>
   })();
 
 describe('buildPayloadsFromLogContent', () => {
+  it.each([
+    {
+      browser: 'iPhone Safari',
+      logged:
+        'Mozilla/5.0%20(iPhone;%20CPU%20iPhone%20OS%2013_2_3%20like%20Mac%20OS%20X)%20AppleWebKit/605.1.15%20(KHTML,%20like%20Gecko)%20Version/13.0.3%20Mobile/15E148%20Safari/604.1',
+      expected:
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1'
+    },
+    {
+      browser: 'Chrome',
+      logged:
+        'Mozilla/5.0%20(Macintosh;%20Intel%20Mac%20OS%20X%2010_15_7)%20AppleWebKit/537.36%20(KHTML,%20like%20Gecko)%20Chrome/150.0.0.0%20Safari/537.36',
+      expected:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36'
+    },
+    {
+      browser: 'Firefox',
+      logged:
+        'Mozilla/5.0%20(X11;%20Linux%20x86_64;%20rv:128.0)%20Gecko/20100101%20Firefox/128.0',
+      expected:
+        'Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0'
+    }
+  ])(
+    'sends a readable $browser User-Agent after one query parse when decoding is enabled',
+    async ({ logged, expected }) => {
+      const sender = vi
+        .spyOn(http, 'sendMatomoBatch')
+        .mockResolvedValue(undefined);
+      try {
+        const decodingConfig = getConfig({
+          MATOMO_URL: 'https://analytics.example.com',
+          MATOMO_SITE_ID: '1',
+          MATOMO_REC_MODE: '2',
+          CLOUDFRONT_DECODE_USER_AGENT: 'true',
+          CLOUDFRONT_DEFAULT_PROTOCOL: 'https',
+          CLOUDFRONT_DEFAULT_HOST: 'example.com'
+        });
+        await sendLogContentToMatomo(
+          JSON.stringify({
+            date: '2026-10-05',
+            time: '10:00:00',
+            'cs-method': 'GET',
+            'cs-uri-stem': '/page',
+            'cs(User-Agent)': logged
+          }),
+          decodingConfig
+        );
+        expect(sender).toHaveBeenCalledTimes(1);
+        const requests = sender.mock.calls[0][1] as string[];
+        expect(requests).toHaveLength(1);
+        expect(new URLSearchParams(requests[0].slice(1)).get('ua')).toBe(
+          expected
+        );
+      } finally {
+        sender.mockRestore();
+      }
+    }
+  );
+
+  it.each([false, true])(
+    'applies the allowlist to the same User-Agent sent to Matomo (decoding: %s)',
+    async (enabled) => {
+      const sender = vi
+        .spyOn(http, 'sendMatomoBatch')
+        .mockResolvedValue(undefined);
+      try {
+        const filteredConfig = {
+          ...config,
+          cloudFrontDecodeUserAgent: enabled,
+          userAgentAllowlistRegex: /^Mozilla\/5\.0 \(iPhone\)$/i
+        };
+        await sendLogContentToMatomo(
+          JSON.stringify({
+            date: '2026-10-05',
+            time: '10:00:00',
+            'cs-method': 'GET',
+            'cs-protocol': 'https',
+            'x-host-header': 'example.com',
+            'cs-uri-stem': '/page',
+            'cs(User-Agent)': 'Mozilla/5.0%20(iPhone)'
+          }),
+          filteredConfig
+        );
+        expect(sender).toHaveBeenCalledTimes(enabled ? 1 : 0);
+        if (enabled) {
+          const requests = sender.mock.calls[0][1] as string[];
+          expect(new URLSearchParams(requests[0].slice(1)).get('ua')).toBe(
+            'Mozilla/5.0 (iPhone)'
+          );
+        }
+      } finally {
+        sender.mockRestore();
+      }
+    }
+  );
+
+  it('sends malformed User-Agents without skipping and decodes nested escapes only once', async () => {
+    const sender = vi
+      .spyOn(http, 'sendMatomoBatch')
+      .mockResolvedValue(undefined);
+    try {
+      const loggedAgents = [
+        'Custom%20Agent%ZZ',
+        'Custom%20Agent%C3%28',
+        'Custom%2520Agent'
+      ];
+      const entries = loggedAgents
+        .map((userAgent) =>
+          JSON.stringify({
+            date: '2026-10-05',
+            time: '10:00:00',
+            'cs-method': 'GET',
+            'cs-protocol': 'https',
+            'x-host-header': 'example.com',
+            'cs-uri-stem': '/page',
+            'cs(User-Agent)': userAgent
+          })
+        )
+        .join('\n');
+      await sendLogContentToMatomo(entries, {
+        ...config,
+        cloudFrontDecodeUserAgent: true
+      });
+      expect(sender).toHaveBeenCalledTimes(1);
+      const requests = sender.mock.calls[0][1] as string[];
+      expect(
+        requests.map((request) =>
+          new URLSearchParams(request.slice(1)).get('ua')
+        )
+      ).toEqual([
+        'Custom%20Agent%ZZ',
+        'Custom%20Agent%C3%28',
+        'Custom%20Agent'
+      ]);
+    } finally {
+      sender.mockRestore();
+    }
+  });
+
   it('preserves different visitor IPs behind the same Cloudflare proxy and browser agent', async () => {
     const sender = vi
       .spyOn(http, 'sendMatomoBatch')
@@ -93,10 +232,22 @@ describe('buildPayloadsFromLogContent', () => {
       mode: '2',
       userAgents: ['Mozilla/5.0%20(iPhone)%20Safari/604.1', 'ChatGPT-User/1.0'],
       expectedRecMode: '2'
+    },
+    {
+      mode: undefined,
+      decodeUserAgent: 'true',
+      userAgents: ['ChatGPT-User/1.0'],
+      expectedRecMode: '1'
+    },
+    {
+      mode: '2',
+      decodeUserAgent: 'true',
+      userAgents: ['Mozilla/5.0 (iPhone) Safari/604.1', 'ChatGPT-User/1.0'],
+      expectedRecMode: '2'
     }
   ])(
-    'sends the expected visits for recording mode $mode',
-    async ({ mode, userAgents, expectedRecMode }) => {
+    'sends the expected visits for recording mode $mode (User-Agent decoding: $decodeUserAgent)',
+    async ({ mode, decodeUserAgent, userAgents, expectedRecMode }) => {
       const sender = vi
         .spyOn(http, 'sendMatomoBatch')
         .mockResolvedValue(undefined);
@@ -104,6 +255,7 @@ describe('buildPayloadsFromLogContent', () => {
         MATOMO_URL: 'https://analytics.example.com',
         MATOMO_SITE_ID: '1',
         MATOMO_REC_MODE: mode,
+        CLOUDFRONT_DECODE_USER_AGENT: decodeUserAgent,
         CLOUDFRONT_DEFAULT_PROTOCOL: 'https',
         CLOUDFRONT_DEFAULT_HOST: 'example.com'
       });

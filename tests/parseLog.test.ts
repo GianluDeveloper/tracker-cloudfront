@@ -101,8 +101,64 @@ describe('buildRequestsFromFile', () => {
       expect(params.get('http_status')).toBe('200');
       expect(params.get('bw_bytes')).toBe('4987');
       expect(params.get('pf_srv')).toBe('722');
+      expect(params.get('ua')).toBe('Mozilla/5.0%20(iPhone)');
     }
   );
+
+  it.each([
+    { gz: false, enabled: false },
+    { gz: false, enabled: true },
+    { gz: true, enabled: false },
+    { gz: true, enabled: true }
+  ])(
+    'uses opt-in decoding for both local filtering and payloads (gzip: $gz, decoding: $enabled)',
+    async ({ gz, enabled }) => {
+      const entry = {
+        date: '2026-10-05',
+        time: '10:51:23',
+        'cs-method': 'GET',
+        'cs-uri-stem': '/page',
+        'cs(User-Agent)': 'Mozilla/5.0%20(iPhone)'
+      };
+      const { filePath, tmpDir } = await writeTempFile(
+        `${JSON.stringify(entry)}\n`,
+        gz
+      );
+      tmpDirs.push(tmpDir);
+      const decodingConfig = getConfig({
+        MATOMO_URL: 'https://analytics.example.com',
+        MATOMO_SITE_ID: '1',
+        MATOMO_REC_MODE: '2',
+        CLOUDFRONT_DEFAULT_PROTOCOL: 'https',
+        CLOUDFRONT_DEFAULT_HOST: 'www.example.com',
+        CLOUDFRONT_DECODE_USER_AGENT: String(enabled),
+        USER_AGENT_ALLOWLIST_REGEX: '^Mozilla/5\\.0 \\(iPhone\\)$'
+      });
+      const requests = await buildRequestsFromFile(filePath, decodingConfig);
+      expect(requests).toHaveLength(enabled ? 1 : 0);
+      if (enabled) {
+        const params = new URLSearchParams(requests[0].slice(1));
+        expect(params.get('ua')).toBe('Mozilla/5.0 (iPhone)');
+        expect(params.get('recMode')).toBe('2');
+      }
+    }
+  );
+
+  it('decodes standard W3C User-Agents while retaining literal plus signs', async () => {
+    const standardLog = `#Fields: date time cs-method cs-protocol x-host-header cs-uri-stem cs-uri-query sc-status time-taken sc-bytes cs(User-Agent)
+2025-02-18 12:00:00 GET https example.com /path - 200 0.123 512 Bot/1.0%20(+https://example.com/a+b)
+`;
+    const { filePath, tmpDir } = await writeTempFile(standardLog);
+    tmpDirs.push(tmpDir);
+    const requests = await buildRequestsFromFile(filePath, {
+      ...config,
+      cloudFrontDecodeUserAgent: true
+    });
+    expect(requests).toHaveLength(1);
+    expect(new URLSearchParams(requests[0].slice(1)).get('ua')).toBe(
+      'Bot/1.0 (+https://example.com/a+b)'
+    );
+  });
 
   it.each([false, true])(
     'includes the Cloudflare visitor IP in local JSONL requests without exposing the token (gzip: %s)',

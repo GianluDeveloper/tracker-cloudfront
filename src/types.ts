@@ -17,6 +17,7 @@ export interface MatomoConfig {
   cloudFrontDefaultProtocol?: string;
   cloudFrontDefaultHost?: string;
   cloudFrontBehindCloudflare?: boolean;
+  cloudFrontDecodeUserAgent?: boolean;
   batchSize: number;
   matomoTimeoutMs: number;
   logLevel: LogLevel;

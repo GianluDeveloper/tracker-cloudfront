@@ -15,6 +15,7 @@ Serverless pipeline (TypeScript, Node 24) that consumes CloudFront access logs f
 - `MATOMO_TIMEOUT_MS` (optional, default `5000`): HTTP timeout in ms.
 - `MATOMO_TOKEN_AUTH` (optional, recommended): Matomo token; required when `cdt` is older than 24 hours (Matomo bulk import rule), or when `CLOUDFRONT_BEHIND_CLOUDFLARE` is enabled. For client IP overrides, the token must have write or admin permission for the Matomo site. Sent as the top-level `token_auth` in the bulk JSON body and as `Authorization: Bearer <token>` for compatibility.
 - `MATOMO_REC_MODE` (optional, default `1`): `1` tracks only supported AI bots. Set `2` to enable automatic recording of normal visits/actions and supported AI bots, routed by Matomo to their respective reports. In automatic mode, the default user agent filter permits all non-empty user agents. Other values are rejected.
+- `CLOUDFRONT_DECODE_USER_AGENT` (optional, default disabled): Set `true` or `1` to URL-decode `cs(User-Agent)` once before matching `USER_AGENT_ALLOWLIST_REGEX` and encoding the Matomo request. Plain user agents and literal `+` characters are preserved; invalid percent encoding falls back to the original value without discarding the entry. Unset, empty, `false`, or `0` disables decoding; values are trimmed and case-insensitive. Other values are rejected. Applies to both Lambda processing and `parse:log`.
 - `CLOUDFRONT_DEFAULT_PROTOCOL` (optional): Fallback protocol, e.g. `https`, used when a log entry has no `cs-protocol` or its value is empty/`-`.
 - `CLOUDFRONT_DEFAULT_HOST` (optional): Fallback host, e.g. `www.example.com` (without protocol or path), used when a log entry has no `x-host-header` or its value is empty/`-`. Values present in the log always take precedence over these fallbacks. If either URL field is missing and its fallback is unset, the entry cannot be tracked.
 - `CLOUDFRONT_BEHIND_CLOUDFLARE` (optional, default disabled): Set `true` or `1` to send the client IP to Matomo as `cip`. When `c-ip` is a known Cloudflare proxy, prefer `cf-connecting-ip` / `CF-Connecting-IP` if present in enriched logs, otherwise use `x-forwarded-for`. Unset, empty, `false`, or `0` disables this feature; values are trimmed and case-insensitive. Other values are rejected. Enabling this option requires `MATOMO_TOKEN_AUTH`.
@@ -71,6 +72,21 @@ Replace the Matomo URL, site ID, and website host with your values. If `USER_AGE
 
 Normal visits appear in the standard visitor reports. Supported AI chatbot requests appear separately in **AI Assistants → AI Chatbots Overview**. For self-hosted Matomo, activate the `BotTracking` plugin to use the AI Chatbot reports. Use a Matomo version that supports the selected recording mode; see the [Tracking API](https://developer.matomo.org/api-reference/tracking-api#tracking-bots) and [AI Chatbot report setup](https://matomo.org/faq/reports/ai-chatbots-overview-report/).
 
+## Browser and Browser Engine Detection
+
+CloudFront logs can contain an encoded user agent such as `Mozilla/5.0%20(iPhone)%20Safari/604.1`; see the [official log example](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/standard-logs-reference.html). With decoding disabled, the request encoder turns the literal `%20` into `%2520`. Matomo then receives `%20` instead of spaces in `ua`, which can prevent correct browser detection.
+
+To decode these log values and record ordinary browser visits, set:
+
+```dotenv
+MATOMO_REC_MODE=2
+CLOUDFRONT_DECODE_USER_AGENT=true
+```
+
+Upload the rebuilt Lambda ZIP and set these variables in its environment. An explicit `USER_AGENT_ALLOWLIST_REGEX` still takes precedence; remove an AI-only override or set it to `.*` to include normal browsers. The decode flag is independent of recording mode and also applies to local `parse:log` runs. It is disabled by default because changing the user agent can affect allowlist matches and Matomo's visitor matching.
+
+Matomo derives browser and engine on the server from `ua`; this pipeline does not need to send separate browser fields or add JavaScript tracking. See the [Tracking API](https://developer.matomo.org/api-reference/tracking-api) and Matomo's [browser engine detection](https://github.com/matomo-org/matomo/blob/5.x-dev/plugins/DevicesDetection/Columns/BrowserEngine.php). For self-hosted installations, check that `DevicesDetection` is active; it is included in Matomo's [default plugins](https://github.com/matomo-org/matomo/blob/5.x-dev/config/global.ini.php). Check normal visitor reports for browser dimensions: AI bot tracking uses a separate set of fields and reports. Deploying this change does not repair already stored visits; check newly imported browser visits after enabling it.
+
 ## Cloudflare Reverse Proxy
 
 For a website reached through `visitor → Cloudflare → CloudFront`, enable client IP forwarding in the Lambda environment:
@@ -97,7 +113,7 @@ When the option is enabled, the tracker selects the IP as follows:
 
 This selection supports the topology above. Additional proxies or Cloudflare Workers may produce a different IP chain and are not resolved by this option. `c-country` from these logs describes the connecting proxy's country and is not forwarded to Matomo; visitor location depends on Matomo's geolocation of the selected IP.
 
-The tracker sends the selected IP and the logged user agent without generating random visitor IDs. Matomo can use these values to correlate requests, but this is a heuristic: people sharing a public IP and user agent, for example behind NAT, may appear as the same visitor. IP and user agent cannot prove that two requests came from the same person.
+The tracker sends the selected IP and the user agent without generating random visitor IDs. Matomo can use these values to correlate requests, but this is a heuristic: people sharing a public IP and user agent, for example behind NAT, may appear as the same visitor. IP and user agent cannot prove that two requests came from the same person.
 
 Every `npm run build` downloads the [official Cloudflare IPv4 ranges](https://www.cloudflare.com/ips-v4) and [IPv6 ranges](https://www.cloudflare.com/ips-v6), validates them, and refreshes `src/cloudflareRanges.json` before bundling. This generated snapshot is tracked in Git for review and embedded in the Lambda; no network lookup runs for each request. Builds require HTTPS access to `www.cloudflare.com` and fail if the download or validation fails, rather than using stale ranges. Rebuild and upload the new ZIP to deploy an updated range list.
 
@@ -190,6 +206,7 @@ Example CloudFront logging fields (set on the distribution) to cover required/op
   - Optional: `http_status`, `bw_bytes`, `pf_srv`, and `cip` when `CLOUDFRONT_BEHIND_CLOUDFLARE` is enabled and a valid client IP can be selected.
 - Uses bot-only recording by default (`recMode=1`). When explicitly enabled with `MATOMO_REC_MODE=2`, normal requests are processed as visits/actions, while supported AI bots are processed separately in AI Chatbot reports. This does not force tracking of other crawlers excluded by Matomo. See the [Matomo Tracking API](https://developer.matomo.org/api-reference/tracking-api#tracking-bots).
 - Filters requests by user agent using `USER_AGENT_ALLOWLIST_REGEX`; the default is an AI bot allowlist in bot-only mode and all non-empty user agents in automatic mode. Non-matching or empty user agents are skipped before payload assembly.
+- When `CLOUDFRONT_DECODE_USER_AGENT` is enabled, URL-decodes `cs(User-Agent)` once before user agent filtering and Matomo request encoding. Malformed encoding keeps the original user agent.
 - Filters requests by HTTP method using `HTTP_METHOD_ALLOWLIST` (defaults to `GET` only).
 - Skips entries whose URL matches `URL_EXCLUDE_REGEX` (defaults to common static assets like js/css, images, fonts, source maps).
 - Batches requests (size `BATCH_SIZE`) and POSTs `{ "requests": ["?param=value", ...] }` to `/matomo.php` with retries/backoff and structured logs. When `MATOMO_TOKEN_AUTH` is configured, the body also contains a top-level `"token_auth": "<token>"` and the request includes an `Authorization: Bearer <token>` header.
@@ -233,6 +250,7 @@ For JSON Lines that omit protocol and host:
 MATOMO_URL=https://analytics.example.com \
 MATOMO_SITE_ID=1 \
 MATOMO_REC_MODE=2 \
+CLOUDFRONT_DECODE_USER_AGENT=true \
 CLOUDFRONT_DEFAULT_PROTOCOL=https \
 CLOUDFRONT_DEFAULT_HOST=www.example.com \
 npm run parse:log -- path/to/cloudfront.jsonl

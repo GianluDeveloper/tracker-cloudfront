@@ -25,7 +25,13 @@ export async function buildRequestsFromFile(
 ): Promise<string[]> {
   const requests: string[] = [];
   for await (const entry of parseCloudFrontLines(fileLines(filePath))) {
-    if (!isUserAgentAllowed(entry, config.userAgentAllowlistRegex)) {
+    if (
+      !isUserAgentAllowed(
+        entry,
+        config.userAgentAllowlistRegex,
+        config.cloudFrontDecodeUserAgent
+      )
+    ) {
       continue;
     }
     if (!isHttpMethodAllowed(entry, config.httpMethodAllowlist)) {

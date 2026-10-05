@@ -212,6 +212,52 @@ describe('buildMatomoPayload', () => {
     expect(payload.ua).toBe('');
   });
 
+  describe('opt-in CloudFront User-Agent decoding', () => {
+    const entry = {
+      date: '2026-10-05',
+      time: '10:51:23',
+      'cs-protocol': 'https',
+      'x-host-header': 'example.com',
+      'cs-uri-stem': '/'
+    };
+
+    it.each([undefined, false])(
+      'preserves the logged User-Agent when the option is %s',
+      (enabled) => {
+        const payload = buildMatomoPayload(
+          { ...entry, 'cs(User-Agent)': 'Mozilla/5.0%20(iPhone)' },
+          { ...config, cloudFrontDecodeUserAgent: enabled }
+        );
+        expect(payload.ua).toBe('Mozilla/5.0%20(iPhone)');
+      }
+    );
+
+    it.each([
+      ['Mozilla/5.0%20(iPhone)', 'Mozilla/5.0 (iPhone)'],
+      ['Mozilla/5.0 (iPhone)', 'Mozilla/5.0 (iPhone)'],
+      [
+        'Bot/1.0%20(+https://example.com/a+b)',
+        'Bot/1.0 (+https://example.com/a+b)'
+      ],
+      ['Custom%2520Agent', 'Custom%20Agent'],
+      ['Custom%20Agent%ZZ', 'Custom%20Agent%ZZ'],
+      ['Custom%20Agent%', 'Custom%20Agent%'],
+      ['Custom%20Agent%C3%28', 'Custom%20Agent%C3%28'],
+      ['', ''],
+      [undefined, '']
+    ])('decodes %j exactly once, safely producing %j', (logged, expected) => {
+      const input =
+        logged === undefined ? entry : { ...entry, 'cs(User-Agent)': logged };
+      const payload = buildMatomoPayload(input, {
+        ...config,
+        cloudFrontDecodeUserAgent: true
+      });
+      expect(payload.ua).toBe(expected);
+      if (logged !== undefined)
+        expect(input).toHaveProperty('cs(User-Agent)', logged);
+    });
+  });
+
   describe('Cloudflare client IP handling', () => {
     const entry = {
       date: '2026-10-05',

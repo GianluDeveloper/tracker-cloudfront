@@ -15,6 +15,7 @@ describe('getConfig', () => {
       matomoTokenAuth: undefined,
       matomoRecMode: 1,
       cloudFrontBehindCloudflare: false,
+      cloudFrontDecodeUserAgent: false,
       cloudFrontDefaultProtocol: undefined,
       cloudFrontDefaultHost: undefined,
       batchSize: 20,
@@ -53,6 +54,7 @@ describe('getConfig', () => {
       MATOMO_TOKEN_AUTH: 'secret',
       MATOMO_REC_MODE: ' 2 ',
       CLOUDFRONT_BEHIND_CLOUDFLARE: ' true ',
+      CLOUDFRONT_DECODE_USER_AGENT: ' true ',
       CLOUDFRONT_DEFAULT_PROTOCOL: ' https ',
       CLOUDFRONT_DEFAULT_HOST: ' www.example.com ',
       BATCH_SIZE: '10',
@@ -69,6 +71,7 @@ describe('getConfig', () => {
       matomoTokenAuth: 'secret',
       matomoRecMode: 2,
       cloudFrontBehindCloudflare: true,
+      cloudFrontDecodeUserAgent: true,
       cloudFrontDefaultProtocol: 'https',
       cloudFrontDefaultHost: 'www.example.com',
       batchSize: 10,
@@ -154,6 +157,35 @@ describe('getConfig', () => {
       expect(() =>
         getConfig({ ...baseEnv, CLOUDFRONT_BEHIND_CLOUDFLARE: value })
       ).toThrow(/Invalid CLOUDFRONT_BEHIND_CLOUDFLARE/);
+    }
+  );
+
+  it.each(['true', 'TRUE', ' True ', '1', ' 1 '])(
+    'enables User-Agent decoding for CLOUDFRONT_DECODE_USER_AGENT=%j',
+    (value) => {
+      expect(
+        getConfig({ ...baseEnv, CLOUDFRONT_DECODE_USER_AGENT: value })
+          .cloudFrontDecodeUserAgent
+      ).toBe(true);
+    }
+  );
+
+  it.each([undefined, '', ' ', 'false', 'FALSE', ' False ', '0', ' 0 '])(
+    'disables User-Agent decoding for CLOUDFRONT_DECODE_USER_AGENT=%j',
+    (value) => {
+      expect(
+        getConfig({ ...baseEnv, CLOUDFRONT_DECODE_USER_AGENT: value })
+          .cloudFrontDecodeUserAgent
+      ).toBe(false);
+    }
+  );
+
+  it.each(['yes', '2', 'trueish'])(
+    'rejects invalid CLOUDFRONT_DECODE_USER_AGENT=%j',
+    (value) => {
+      expect(() =>
+        getConfig({ ...baseEnv, CLOUDFRONT_DECODE_USER_AGENT: value })
+      ).toThrow(/Invalid CLOUDFRONT_DECODE_USER_AGENT/);
     }
   );
 
