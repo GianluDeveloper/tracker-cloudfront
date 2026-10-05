@@ -90,7 +90,40 @@ describe('sendMatomoBatch', () => {
     const headers = options.headers as Record<string, string>;
     expect(headers?.['Content-Type']).toBe('application/json');
     expect(headers?.Authorization).toBe('Bearer token123');
+    const request = requestSpy.mock.results[0].value;
+    expect(
+      JSON.parse(String(vi.mocked(request.write).mock.calls[0][0]))
+    ).toEqual({
+      requests: [{ idsite: 1, rec: 1 }],
+      token_auth: 'token123'
+    });
+    expect(String(url)).not.toContain('token123');
+    expect(
+      JSON.stringify(Object.values(consoleSpies).map((spy) => spy.mock.calls))
+    ).not.toContain('token123');
 
+    requestSpy.mockRestore();
+  });
+
+  it('omits authentication from the body and headers when no token is configured', async () => {
+    const requestSpy = vi
+      .spyOn(https, 'request')
+      .mockImplementation(
+        (
+          _url: string | URL,
+          _options: https.RequestOptions,
+          callback?: (res: IncomingMessage) => void
+        ) => buildRequestMock(makeResponse(204), callback)
+      );
+    await sendMatomoBatch('https://analytics.example.com', ['?idsite=1&rec=1']);
+    const [, options] = requestSpy.mock.calls[0];
+    const request = requestSpy.mock.results[0].value;
+    expect(
+      JSON.parse(String(vi.mocked(request.write).mock.calls[0][0]))
+    ).toEqual({
+      requests: ['?idsite=1&rec=1']
+    });
+    expect(options.headers).not.toHaveProperty('Authorization');
     requestSpy.mockRestore();
   });
 

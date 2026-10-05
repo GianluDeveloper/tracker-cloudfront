@@ -3,6 +3,7 @@ import type {
   MatomoConfig,
   MatomoPayload
 } from './types.js';
+import { getCloudFrontClientIp } from './clientIp.js';
 
 const toIntIfNumeric = (value?: string) => {
   if (value === undefined) return undefined;
@@ -61,6 +62,11 @@ export function buildMatomoPayload(
     cdt,
     ua: userAgent
   };
+
+  if (config.cloudFrontBehindCloudflare) {
+    const clientIp = getCloudFrontClientIp(entry);
+    if (clientIp) payload.cip = clientIp;
+  }
 
   if (entry['sc-status']) {
     payload.http_status = toIntIfNumeric(entry['sc-status']);

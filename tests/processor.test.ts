@@ -48,6 +48,45 @@ const toAsyncLines = (content: string) =>
   })();
 
 describe('buildPayloadsFromLogContent', () => {
+  it('preserves different visitor IPs behind the same Cloudflare proxy and browser agent', async () => {
+    const sender = vi
+      .spyOn(http, 'sendMatomoBatch')
+      .mockResolvedValue(undefined);
+    const cloudflareConfig = getConfig({
+      MATOMO_URL: 'https://analytics.example.com',
+      MATOMO_SITE_ID: '1',
+      MATOMO_REC_MODE: '2',
+      MATOMO_TOKEN_AUTH: 'test-token',
+      CLOUDFRONT_BEHIND_CLOUDFLARE: 'true',
+      CLOUDFRONT_DEFAULT_PROTOCOL: 'https',
+      CLOUDFRONT_DEFAULT_HOST: 'example.com'
+    });
+    const entries = ['43.166.244.192', '40.77.167.156'].map((ip) => ({
+      date: '2026-10-05',
+      time: '10:00:00',
+      'cs-method': 'GET',
+      'cs-uri-stem': '/page',
+      'cs(User-Agent)': 'Mozilla/5.0 Safari/604.1',
+      'c-ip': '172.68.245.145',
+      'cf-connecting-ip': ip,
+      'x-forwarded-for': '1.2.3.4'
+    }));
+    await sendLogContentToMatomo(
+      entries.map((entry) => JSON.stringify(entry)).join('\n'),
+      cloudflareConfig
+    );
+    expect(sender).toHaveBeenCalledTimes(1);
+    expect(sender.mock.calls[0][1]).toHaveLength(2);
+    const requests = sender.mock.calls[0][1] as string[];
+    expect(
+      requests.map((request) =>
+        new URLSearchParams(request.slice(1)).get('cip')
+      )
+    ).toEqual(['43.166.244.192', '40.77.167.156']);
+    expect(sender.mock.calls[0][4]).toBe('test-token');
+    sender.mockRestore();
+  });
+
   it.each([
     { mode: undefined, userAgents: ['ChatGPT-User/1.0'], expectedRecMode: '1' },
     {

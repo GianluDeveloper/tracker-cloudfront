@@ -39,7 +39,10 @@ export async function sendMatomoBatch(
   url.pathname = `${normalizedBasePath}matomo.php`;
   url.search = '';
   url.hash = '';
-  const body = JSON.stringify({ requests: payloads });
+  const body = JSON.stringify({
+    requests: payloads,
+    ...(tokenAuth ? { token_auth: tokenAuth } : {})
+  });
   const log = createLogger(logLevel);
 
   const requestOptions: RequestOptions = {

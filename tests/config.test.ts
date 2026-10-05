@@ -14,6 +14,7 @@ describe('getConfig', () => {
       matomoSiteId: 42,
       matomoTokenAuth: undefined,
       matomoRecMode: 1,
+      cloudFrontBehindCloudflare: false,
       cloudFrontDefaultProtocol: undefined,
       cloudFrontDefaultHost: undefined,
       batchSize: 20,
@@ -51,6 +52,7 @@ describe('getConfig', () => {
       ...baseEnv,
       MATOMO_TOKEN_AUTH: 'secret',
       MATOMO_REC_MODE: ' 2 ',
+      CLOUDFRONT_BEHIND_CLOUDFLARE: ' true ',
       CLOUDFRONT_DEFAULT_PROTOCOL: ' https ',
       CLOUDFRONT_DEFAULT_HOST: ' www.example.com ',
       BATCH_SIZE: '10',
@@ -66,6 +68,7 @@ describe('getConfig', () => {
       matomoSiteId: 42,
       matomoTokenAuth: 'secret',
       matomoRecMode: 2,
+      cloudFrontBehindCloudflare: true,
       cloudFrontDefaultProtocol: 'https',
       cloudFrontDefaultHost: 'www.example.com',
       batchSize: 10,
@@ -119,6 +122,53 @@ describe('getConfig', () => {
     expect(config.cloudFrontDefaultProtocol).toBeUndefined();
     expect(config.cloudFrontDefaultHost).toBeUndefined();
   });
+
+  it.each(['true', 'TRUE', ' True ', '1', ' 1 '])(
+    'enables Cloudflare client IP handling for CLOUDFRONT_BEHIND_CLOUDFLARE=%j',
+    (value) => {
+      const config = getConfig({
+        ...baseEnv,
+        MATOMO_TOKEN_AUTH: ' secret ',
+        CLOUDFRONT_BEHIND_CLOUDFLARE: value
+      });
+      expect(config.cloudFrontBehindCloudflare).toBe(true);
+      expect(config.matomoTokenAuth).toBe('secret');
+    }
+  );
+
+  it.each([undefined, '', ' ', 'false', 'FALSE', ' False ', '0', ' 0 '])(
+    'disables Cloudflare client IP handling for CLOUDFRONT_BEHIND_CLOUDFLARE=%j',
+    (value) => {
+      expect(
+        getConfig({
+          ...baseEnv,
+          CLOUDFRONT_BEHIND_CLOUDFLARE: value
+        }).cloudFrontBehindCloudflare
+      ).toBe(false);
+    }
+  );
+
+  it.each(['yes', '2', 'trueish'])(
+    'rejects invalid CLOUDFRONT_BEHIND_CLOUDFLARE=%j',
+    (value) => {
+      expect(() =>
+        getConfig({ ...baseEnv, CLOUDFRONT_BEHIND_CLOUDFLARE: value })
+      ).toThrow(/Invalid CLOUDFRONT_BEHIND_CLOUDFLARE/);
+    }
+  );
+
+  it.each([undefined, '', '   '])(
+    'requires an authentication token when Cloudflare handling is enabled (token: %j)',
+    (token) => {
+      expect(() =>
+        getConfig({
+          ...baseEnv,
+          CLOUDFRONT_BEHIND_CLOUDFLARE: 'true',
+          MATOMO_TOKEN_AUTH: token
+        })
+      ).toThrow(/MATOMO_TOKEN_AUTH/);
+    }
+  );
 
   it('throws on invalid regex config', () => {
     expect(() =>

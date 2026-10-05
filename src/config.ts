@@ -70,7 +70,21 @@ export function getConfig(
 
   const batchSize = toInt(env.BATCH_SIZE, 20) ?? 20;
   const matomoTimeoutMs = toInt(env.MATOMO_TIMEOUT_MS, 5000) ?? 5000;
-  const matomoTokenAuth = env.MATOMO_TOKEN_AUTH || undefined;
+  const matomoTokenAuth = env.MATOMO_TOKEN_AUTH?.trim() || undefined;
+  const cloudflareMode =
+    env.CLOUDFRONT_BEHIND_CLOUDFLARE?.trim().toLowerCase() || 'false';
+  if (!['true', 'false', '1', '0'].includes(cloudflareMode)) {
+    throw new Error(
+      'Invalid CLOUDFRONT_BEHIND_CLOUDFLARE. Expected true/false or 1/0.'
+    );
+  }
+  const cloudFrontBehindCloudflare =
+    cloudflareMode === 'true' || cloudflareMode === '1';
+  if (cloudFrontBehindCloudflare && !matomoTokenAuth) {
+    throw new Error(
+      'CLOUDFRONT_BEHIND_CLOUDFLARE requires MATOMO_TOKEN_AUTH to override visitor IPs.'
+    );
+  }
   const recMode = env.MATOMO_REC_MODE?.trim() || '1';
   if (recMode !== '1' && recMode !== '2') {
     throw new Error('Invalid MATOMO_REC_MODE. Expected 1 (bots) or 2 (auto).');
@@ -116,6 +130,7 @@ export function getConfig(
     cloudFrontDefaultProtocol:
       env.CLOUDFRONT_DEFAULT_PROTOCOL?.trim() || undefined,
     cloudFrontDefaultHost: env.CLOUDFRONT_DEFAULT_HOST?.trim() || undefined,
+    cloudFrontBehindCloudflare,
     batchSize,
     matomoTimeoutMs,
     logLevel,

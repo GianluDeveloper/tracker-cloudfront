@@ -103,4 +103,45 @@ describe('buildRequestsFromFile', () => {
       expect(params.get('pf_srv')).toBe('722');
     }
   );
+
+  it.each([false, true])(
+    'includes the Cloudflare visitor IP in local JSONL requests without exposing the token (gzip: %s)',
+    async (gz) => {
+      const entry = {
+        date: '2026-10-05',
+        time: '10:51:23',
+        'cs-method': 'GET',
+        'cs-uri-stem': '/chi-sono/',
+        'cs(User-Agent)': 'Mozilla/5.0%20(iPhone)',
+        'c-ip': '172.68.245.145',
+        'cf-connecting-ip': '203.0.113.17',
+        'x-forwarded-for': '1.2.3.4%2C%2043.166.244.192',
+        'c-country': 'US'
+      };
+      const { filePath, tmpDir } = await writeTempFile(
+        `${JSON.stringify(entry)}\n`,
+        gz
+      );
+      tmpDirs.push(tmpDir);
+      const cloudflareConfig = getConfig({
+        MATOMO_URL: 'https://analytics.example.com',
+        MATOMO_SITE_ID: '1',
+        MATOMO_REC_MODE: '2',
+        MATOMO_TOKEN_AUTH: 'private-test-token',
+        CLOUDFRONT_BEHIND_CLOUDFLARE: 'true',
+        CLOUDFRONT_DEFAULT_PROTOCOL: 'https',
+        CLOUDFRONT_DEFAULT_HOST: 'www.example.com'
+      });
+
+      const requests = await buildRequestsFromFile(filePath, cloudflareConfig);
+      expect(requests).toHaveLength(1);
+      const params = new URLSearchParams(requests[0].slice(1));
+      expect(params.get('cip')).toBe('203.0.113.17');
+      expect(params.get('recMode')).toBe('2');
+      expect(params.get('url')).toBe('https://www.example.com/chi-sono/');
+      expect(params.has('country')).toBe(false);
+      expect(params.has('token_auth')).toBe(false);
+      expect(requests[0]).not.toContain('private-test-token');
+    }
+  );
 });

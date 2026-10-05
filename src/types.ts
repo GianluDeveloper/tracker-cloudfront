@@ -16,6 +16,7 @@ export interface MatomoConfig {
   matomoRecMode?: 1 | 2;
   cloudFrontDefaultProtocol?: string;
   cloudFrontDefaultHost?: string;
+  cloudFrontBehindCloudflare?: boolean;
   batchSize: number;
   matomoTimeoutMs: number;
   logLevel: LogLevel;
@@ -34,6 +35,7 @@ export interface MatomoPayload {
   source: 'CloudFront';
   cdt: string;
   ua: string;
+  cip?: string;
   download?: string;
   http_status?: number | string;
   bw_bytes?: number | string;

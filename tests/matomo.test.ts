@@ -212,6 +212,75 @@ describe('buildMatomoPayload', () => {
     expect(payload.ua).toBe('');
   });
 
+  describe('Cloudflare client IP handling', () => {
+    const entry = {
+      date: '2026-10-05',
+      time: '10:51:23',
+      'cs-protocol': 'https',
+      'x-host-header': 'example.com',
+      'cs-uri-stem': '/',
+      'cs(User-Agent)': 'Mozilla/5.0',
+      'c-ip': '172.68.245.145',
+      'x-forwarded-for': '1.2.3.4, 43.166.244.192',
+      'c-country': 'US'
+    };
+    const cloudflareConfig = {
+      ...config,
+      cloudFrontBehindCloudflare: true,
+      matomoTokenAuth: 'secret'
+    };
+
+    it.each([undefined, false])(
+      'does not set cip when the option is %s',
+      (enabled) => {
+        const payload = buildMatomoPayload(entry, {
+          ...config,
+          cloudFrontBehindCloudflare: enabled
+        });
+        expect(payload).not.toHaveProperty('cip');
+      }
+    );
+
+    it.each([1, 2] as const)(
+      'sets the visitor IP independently of recording mode %s',
+      (mode) => {
+        const payload = buildMatomoPayload(entry, {
+          ...cloudflareConfig,
+          matomoRecMode: mode
+        });
+        expect(payload.cip).toBe('43.166.244.192');
+        expect(payload.recMode).toBe(mode);
+        expect(payload).not.toHaveProperty('country');
+        expect(payload).not.toHaveProperty('c-country');
+        expect(payload).not.toHaveProperty('token_auth');
+      }
+    );
+
+    it('uses c-ip for visitors connecting directly to CloudFront', () => {
+      const payload = buildMatomoPayload(
+        { ...entry, 'c-ip': '198.51.100.17' },
+        cloudflareConfig
+      );
+      expect(payload.cip).toBe('198.51.100.17');
+    });
+
+    it('uses the Cloudflare IP when no usable forwarded IP is available', () => {
+      const payload = buildMatomoPayload(
+        { ...entry, 'x-forwarded-for': '43.166.244.192, invalid' },
+        cloudflareConfig
+      );
+      expect(payload.cip).toBe('172.68.245.145');
+    });
+
+    it('omits cip when c-ip cannot be validated', () => {
+      const payload = buildMatomoPayload(
+        { ...entry, 'c-ip': '-' },
+        cloudflareConfig
+      );
+      expect(payload).not.toHaveProperty('cip');
+    });
+  });
+
   it('throws when timestamp fields are missing or invalid', () => {
     const base = {
       'cs-protocol': 'https',
