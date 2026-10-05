@@ -45,6 +45,33 @@ export async function* parseCloudFrontLines(
     }
     if (line.startsWith('#')) continue;
 
+    if (line.startsWith('{') || line.startsWith('[')) {
+      try {
+        const parsed: unknown = JSON.parse(line);
+        if (
+          !parsed ||
+          typeof parsed !== 'object' ||
+          Array.isArray(parsed) ||
+          Object.values(parsed).some(
+            (value) => value !== null && typeof value === 'object'
+          )
+        ) {
+          malformed += 1;
+          continue;
+        }
+        const entry: CloudFrontLogEntry = Object.fromEntries(
+          Object.entries(parsed).map(([key, value]) => [
+            key,
+            value === '-' || value === null ? '' : String(value)
+          ])
+        );
+        yield entry;
+      } catch {
+        malformed += 1;
+      }
+      continue;
+    }
+
     const parts = line.split(/\s+/);
     if (parts.length < fields.length) {
       // Skip malformed line

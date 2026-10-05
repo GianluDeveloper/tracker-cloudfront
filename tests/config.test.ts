@@ -13,6 +13,8 @@ describe('getConfig', () => {
       matomoUrl: baseEnv.MATOMO_URL,
       matomoSiteId: 42,
       matomoTokenAuth: undefined,
+      cloudFrontDefaultProtocol: undefined,
+      cloudFrontDefaultHost: undefined,
       batchSize: 20,
       matomoTimeoutMs: 5000,
       logLevel: 'warn'
@@ -47,6 +49,8 @@ describe('getConfig', () => {
     const config = getConfig({
       ...baseEnv,
       MATOMO_TOKEN_AUTH: 'secret',
+      CLOUDFRONT_DEFAULT_PROTOCOL: ' https ',
+      CLOUDFRONT_DEFAULT_HOST: ' www.example.com ',
       BATCH_SIZE: '10',
       MATOMO_TIMEOUT_MS: '8000',
       LOG_LEVEL: 'debug',
@@ -59,6 +63,8 @@ describe('getConfig', () => {
       matomoUrl: baseEnv.MATOMO_URL,
       matomoSiteId: 42,
       matomoTokenAuth: 'secret',
+      cloudFrontDefaultProtocol: 'https',
+      cloudFrontDefaultHost: 'www.example.com',
       batchSize: 10,
       matomoTimeoutMs: 8000,
       logLevel: 'debug'
@@ -67,6 +73,16 @@ describe('getConfig', () => {
     expect(config.httpMethodAllowlist).toEqual(['GET', 'HEAD']);
     expect(config.documentRegex).toEqual(/\.custom$/i);
     expect(config.urlExcludeRegex).toEqual(/\.skip$/i);
+  });
+
+  it('treats blank CloudFront fallbacks as unset', () => {
+    const config = getConfig({
+      ...baseEnv,
+      CLOUDFRONT_DEFAULT_PROTOCOL: ' ',
+      CLOUDFRONT_DEFAULT_HOST: ''
+    });
+    expect(config.cloudFrontDefaultProtocol).toBeUndefined();
+    expect(config.cloudFrontDefaultHost).toBeUndefined();
   });
 
   it('throws on invalid regex config', () => {

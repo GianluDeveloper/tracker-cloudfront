@@ -14,6 +14,8 @@ Serverless pipeline (TypeScript, Node 24) that consumes CloudFront access logs f
 - `MATOMO_SITE_ID` (required): Matomo site ID (integer).
 - `MATOMO_TIMEOUT_MS` (optional, default `5000`): HTTP timeout in ms.
 - `MATOMO_TOKEN_AUTH` (optional, recommended): Matomo token; required when `cdt` is older than 24 hours (Matomo bulk import rule). Sent as `Authorization: Bearer <token>`.
+- `CLOUDFRONT_DEFAULT_PROTOCOL` (optional): Fallback protocol, e.g. `https`, used when a log entry has no `cs-protocol` or its value is empty/`-`.
+- `CLOUDFRONT_DEFAULT_HOST` (optional): Fallback host, e.g. `www.example.com` (without protocol or path), used when a log entry has no `x-host-header` or its value is empty/`-`. Values present in the log always take precedence over these fallbacks. If either URL field is missing and its fallback is unset, the entry cannot be tracked.
 - `BATCH_SIZE` (optional, default `20`): Hit count per Matomo batch.
 - `DOCUMENT_REGEX` (optional): Case-insensitive regex to detect downloads; matching URLs add `download=<url>` to Matomo payloads. This regex runs against the full URL (`protocol://host/path?query`) and defaults to a modern/common set of extensions:
   - Documents: `.pdf`, `.doc`, `.docx`, `.xls`, `.xlsx`, `.ppt`, `.pptx`
@@ -65,7 +67,7 @@ Outputs `dist/index.js` (single bundled file). Upload this file as your Lambda h
 
 Notes:
 
-- The bundle is an ES module; ensure the handler is `index.handler` and that `NODE_OPTIONS` is unset unless required by your environment.
+- The bundle is CommonJS; use the handler `index.handler`.
 - Include the bundled file only (no `node_modules` needed). If your deployment tooling expects a zip, `zip -j lambda.zip dist/index.js` and upload that archive.
 
 Example IAM policy for the Lambda execution role (adjust bucket ARN):
@@ -107,7 +109,7 @@ Example CloudFront logging fields (set on the distribution) to cover required/op
 
 ## Runtime Behavior
 
-- Reads S3 objects as gzip streams, splits into lines, applies `#Fields` header when present, and skips malformed lines (logged).
+- Reads S3 objects as gzip streams, splits into lines, and accepts either whitespace-separated CloudFront logs (with an optional `#Fields` header) or JSON Lines / NDJSON (one flat JSON object per line). Numeric JSON values are converted to strings; `-` and `null` become empty strings. Malformed lines are skipped and logged.
 - Maps fields to Matomo payload:
   - Required: `idsite`, `rec:1`, `recMode:1`, `url` (protocol+host+path+query), `cdt` (`Y-m-d H:i:s`), `ua`, `source:'CloudFront'`.
   - Optional: `http_status`, `bw_bytes`, `pf_srv`.
@@ -135,6 +137,19 @@ npm run parse:log -- path/to/cloudfront.log.gz
 ```
 
 Outputs JSON `{ "requests": ["?idsite=...&url=...&rec=1", ...] }` to stdout.
+
+For JSON Lines that omit protocol and host:
+
+```sh
+MATOMO_URL=https://analytics.example.com \
+MATOMO_SITE_ID=1 \
+CLOUDFRONT_DEFAULT_PROTOCOL=https \
+CLOUDFRONT_DEFAULT_HOST=www.example.com \
+USER_AGENT_ALLOWLIST_REGEX='.*' \
+npm run parse:log -- path/to/cloudfront.jsonl
+```
+
+The local command also accepts `.jsonl.gz` and only generates requests; it does not send them. For the S3/Lambda pipeline, upload gzip-compressed logs. Set `USER_AGENT_ALLOWLIST_REGEX='.*'` only if you want to include all non-empty user agents instead of the default AI bot allowlist. The runtime still applies `URL_EXCLUDE_REGEX`, so XML sitemaps are excluded by default.
 
 ## Tests & Lint
 

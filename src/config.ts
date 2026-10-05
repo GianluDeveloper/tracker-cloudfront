@@ -106,6 +106,9 @@ export function getConfig(
     matomoUrl,
     matomoSiteId,
     matomoTokenAuth,
+    cloudFrontDefaultProtocol:
+      env.CLOUDFRONT_DEFAULT_PROTOCOL?.trim() || undefined,
+    cloudFrontDefaultHost: env.CLOUDFRONT_DEFAULT_HOST?.trim() || undefined,
     batchSize,
     matomoTimeoutMs,
     logLevel,

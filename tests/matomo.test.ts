@@ -131,6 +131,49 @@ describe('buildMatomoPayload', () => {
     });
   });
 
+  it('uses configured fallbacks only for missing or empty URL fields', () => {
+    const fallbackConfig = getConfig({
+      MATOMO_URL: 'https://analytics.example.com',
+      MATOMO_SITE_ID: '99',
+      CLOUDFRONT_DEFAULT_PROTOCOL: 'https',
+      CLOUDFRONT_DEFAULT_HOST: 'fallback.example.com'
+    });
+    const entry = {
+      date: '2026-09-10',
+      time: '11:05:16',
+      'cs-uri-stem': '/chi-sono/'
+    };
+    expect(buildMatomoPayload(entry, fallbackConfig).url).toBe(
+      'https://fallback.example.com/chi-sono/'
+    );
+    expect(
+      buildMatomoPayload(
+        { ...entry, 'cs-protocol': '', 'x-host-header': '' },
+        fallbackConfig
+      ).url
+    ).toBe('https://fallback.example.com/chi-sono/');
+    expect(
+      buildMatomoPayload({ ...entry, 'cs-protocol': 'http' }, fallbackConfig)
+        .url
+    ).toBe('http://fallback.example.com/chi-sono/');
+    expect(
+      buildMatomoPayload(
+        { ...entry, 'x-host-header': 'logged.example.com' },
+        fallbackConfig
+      ).url
+    ).toBe('https://logged.example.com/chi-sono/');
+    expect(
+      buildMatomoPayload(
+        {
+          ...entry,
+          'cs-protocol': 'http',
+          'x-host-header': 'logged.example.com'
+        },
+        fallbackConfig
+      ).url
+    ).toBe('http://logged.example.com/chi-sono/');
+  });
+
   it('throws when required fields are missing', () => {
     expect(() => buildMatomoPayload({}, config)).toThrow(/timestamp/);
     expect(() =>

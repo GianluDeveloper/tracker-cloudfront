@@ -4,6 +4,7 @@ import path from 'path';
 import { gzipSync } from 'zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildRequestsFromFile } from '../scripts/parseLog.js';
+import { getConfig } from '../src/config.js';
 import type { MatomoConfig } from '../src/types.js';
 
 const config: MatomoConfig = {
@@ -65,4 +66,41 @@ describe('buildRequestsFromFile', () => {
     expect(requests).toHaveLength(1);
     expect(requests[0]).toContain('idsite=1');
   });
+
+  it.each([false, true])(
+    'builds Matomo requests from JSON Lines using environment fallbacks (gzip: %s)',
+    async (gz) => {
+      const entry = {
+        date: '2026-09-10',
+        time: '11:05:16',
+        'cs-method': 'GET',
+        'cs-uri-stem': '/chi-sono/',
+        'cs-uri-query': '-',
+        'cs(User-Agent)': 'Mozilla/5.0%20(iPhone)',
+        'sc-status': '200',
+        'sc-bytes': '4987',
+        'time-taken': '0.722'
+      };
+      const { filePath, tmpDir } = await writeTempFile(
+        `${JSON.stringify(entry)}\n`,
+        gz
+      );
+      tmpDirs.push(tmpDir);
+      const fallbackConfig = getConfig({
+        MATOMO_URL: 'https://analytics.example.com',
+        MATOMO_SITE_ID: '1',
+        CLOUDFRONT_DEFAULT_PROTOCOL: 'https',
+        CLOUDFRONT_DEFAULT_HOST: 'www.example.com',
+        USER_AGENT_ALLOWLIST_REGEX: '.*'
+      });
+      const requests = await buildRequestsFromFile(filePath, fallbackConfig);
+      expect(requests).toHaveLength(1);
+      const params = new URLSearchParams(requests[0].slice(1));
+      expect(params.get('url')).toBe('https://www.example.com/chi-sono/');
+      expect(params.get('cdt')).toBe('2026-09-10 11:05:16');
+      expect(params.get('http_status')).toBe('200');
+      expect(params.get('bw_bytes')).toBe('4987');
+      expect(params.get('pf_srv')).toBe('722');
+    }
+  );
 });

@@ -13,6 +13,8 @@ export interface MatomoConfig {
   matomoUrl: string;
   matomoSiteId: number;
   matomoTokenAuth?: string;
+  cloudFrontDefaultProtocol?: string;
+  cloudFrontDefaultHost?: string;
   batchSize: number;
   matomoTimeoutMs: number;
   logLevel: LogLevel;
