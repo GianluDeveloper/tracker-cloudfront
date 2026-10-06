@@ -5,6 +5,7 @@ import type {
 } from './types.js';
 import { getCloudFrontClientIp } from './clientIp.js';
 import { getCloudFrontUserAgent } from './userAgent.js';
+import { detectBot } from './bot.js';
 
 const toIntIfNumeric = (value?: string) => {
   if (value === undefined) return undefined;
@@ -66,6 +67,25 @@ export function buildMatomoPayload(
     cdt,
     ua: userAgent
   };
+
+  if (config.matomoBotTrackingMode === 'visits') {
+    const bot = detectBot(userAgent);
+    if (bot) {
+      // Matomo's native bot reports discard most crawlers. bots=1 permits
+      // visit/action recording only when recMode is absent, including for AI.
+      delete payload.recMode;
+      payload.bots = 1;
+    }
+    if (config.matomoBotStatusDimensionId !== undefined) {
+      payload[`dimension${config.matomoBotStatusDimensionId}`] = bot
+        ? 'Bot'
+        : 'Not detected';
+    }
+    if (config.matomoBotNameDimensionId !== undefined) {
+      payload[`dimension${config.matomoBotNameDimensionId}`] =
+        bot?.name ?? 'Not detected';
+    }
+  }
 
   if (config.cloudFrontBehindCloudflare) {
     const clientIp = getCloudFrontClientIp(entry);

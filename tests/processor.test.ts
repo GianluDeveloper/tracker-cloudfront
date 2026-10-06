@@ -49,6 +49,111 @@ const toAsyncLines = (content: string) =>
 
 describe('buildPayloadsFromLogContent', () => {
   it.each([
+    { mode: '1', names: ['Googlebot', 'ChatGPT-User', 'Unknown bot'] },
+    {
+      mode: '2',
+      names: ['Googlebot', 'ChatGPT-User', 'Unknown bot', 'Not detected']
+    }
+  ])(
+    'sends bot labels through the Lambda pipeline in recording mode $mode',
+    async ({ mode, names }) => {
+      const sender = vi
+        .spyOn(http, 'sendMatomoBatch')
+        .mockResolvedValue(undefined);
+      try {
+        const botConfig = getConfig({
+          MATOMO_URL: 'https://analytics.example.com',
+          MATOMO_SITE_ID: '1',
+          MATOMO_REC_MODE: mode,
+          MATOMO_BOT_TRACKING_MODE: 'visits',
+          MATOMO_BOT_STATUS_DIMENSION_ID: '3',
+          MATOMO_BOT_NAME_DIMENSION_ID: '8',
+          CLOUDFRONT_DECODE_USER_AGENT: 'true',
+          CLOUDFRONT_DEFAULT_PROTOCOL: 'https',
+          CLOUDFRONT_DEFAULT_HOST: 'example.com'
+        });
+        const baseEntry = {
+          date: '2026-10-06',
+          time: '10:00:00',
+          'cs-method': 'GET',
+          'cs-uri-stem': '/'
+        };
+        const entries = [
+          'Googlebot/2.1',
+          'ChatGPT-User/1.0',
+          'ExampleCrawler/1.0',
+          'Mozilla/5.0%20Safari/604.1',
+          '',
+          undefined
+        ].map((ua) => ({ ...baseEntry, 'cs(User-Agent)': ua }));
+        // Existing URL and method exclusions still apply to bots.
+        entries.push({
+          ...baseEntry,
+          'cs-uri-stem': '/asset.js',
+          'cs(User-Agent)': 'Googlebot/2.1'
+        });
+        entries.push({
+          ...baseEntry,
+          'cs-method': 'POST',
+          'cs(User-Agent)': 'ChatGPT-User/1.0'
+        });
+        await sendLogContentToMatomo(
+          entries.map((entry) => JSON.stringify(entry)).join('\n'),
+          botConfig
+        );
+        expect(sender).toHaveBeenCalledTimes(1);
+        const requests = (sender.mock.calls[0][1] as string[]).map(
+          (request) => new URLSearchParams(request.slice(1))
+        );
+        expect(requests.map((request) => request.get('dimension8'))).toEqual(
+          names
+        );
+        for (const request of requests) {
+          const bot = request.get('dimension3') === 'Bot';
+          expect(request.get('bots')).toBe(bot ? '1' : null);
+          expect(request.get('recMode')).toBe(bot ? null : '2');
+        }
+      } finally {
+        sender.mockRestore();
+      }
+    }
+  );
+
+  it('honors an explicit User-Agent allowlist in bot visit mode', async () => {
+    const sender = vi
+      .spyOn(http, 'sendMatomoBatch')
+      .mockResolvedValue(undefined);
+    try {
+      const botConfig = getConfig({
+        MATOMO_URL: 'https://analytics.example.com',
+        MATOMO_SITE_ID: '1',
+        MATOMO_BOT_TRACKING_MODE: 'visits',
+        MATOMO_BOT_STATUS_DIMENSION_ID: '3',
+        MATOMO_BOT_NAME_DIMENSION_ID: '8',
+        USER_AGENT_ALLOWLIST_REGEX: '^Googlebot/',
+        CLOUDFRONT_DEFAULT_PROTOCOL: 'https',
+        CLOUDFRONT_DEFAULT_HOST: 'example.com'
+      });
+      const entries = ['Googlebot/2.1', 'ChatGPT-User/1.0'].map((ua) =>
+        JSON.stringify({
+          date: '2026-10-06',
+          time: '10:00:00',
+          'cs-method': 'GET',
+          'cs(User-Agent)': ua
+        })
+      );
+      await sendLogContentToMatomo(entries.join('\n'), botConfig);
+      const requests = sender.mock.calls[0][1] as string[];
+      expect(requests).toHaveLength(1);
+      expect(new URLSearchParams(requests[0].slice(1)).get('dimension8')).toBe(
+        'Googlebot'
+      );
+    } finally {
+      sender.mockRestore();
+    }
+  });
+
+  it.each([
     {
       browser: 'iPhone Safari',
       logged:

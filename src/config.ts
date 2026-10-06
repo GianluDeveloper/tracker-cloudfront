@@ -9,6 +9,24 @@ const toInt = (value: string | undefined | null, fallback?: number) => {
   return parsed;
 };
 
+const parseDimensionId = (
+  value: string | undefined,
+  name: string
+): number | undefined => {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  if (
+    !/^\d+$/.test(trimmed) ||
+    !Number.isInteger(parsed) ||
+    parsed < 1 ||
+    parsed > 999
+  ) {
+    throw new Error(`Invalid ${name}. Expected an integer between 1 and 999.`);
+  }
+  return parsed;
+};
+
 const escapeRegex = (value: string) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const defaultUserAgentPatterns = [
@@ -99,10 +117,45 @@ export function getConfig(
     throw new Error('Invalid MATOMO_REC_MODE. Expected 1 (bots) or 2 (auto).');
   }
   const matomoRecMode = recMode === '2' ? 2 : 1;
+  const botTrackingMode =
+    env.MATOMO_BOT_TRACKING_MODE?.trim().toLowerCase() || 'native';
+  if (botTrackingMode !== 'native' && botTrackingMode !== 'visits') {
+    throw new Error(
+      'Invalid MATOMO_BOT_TRACKING_MODE. Expected native or visits.'
+    );
+  }
+  const matomoBotTrackingMode = botTrackingMode;
+  const matomoBotStatusDimensionId = parseDimensionId(
+    env.MATOMO_BOT_STATUS_DIMENSION_ID,
+    'MATOMO_BOT_STATUS_DIMENSION_ID'
+  );
+  const matomoBotNameDimensionId = parseDimensionId(
+    env.MATOMO_BOT_NAME_DIMENSION_ID,
+    'MATOMO_BOT_NAME_DIMENSION_ID'
+  );
+  if (
+    matomoBotStatusDimensionId !== undefined &&
+    matomoBotStatusDimensionId === matomoBotNameDimensionId
+  ) {
+    throw new Error(
+      'MATOMO_BOT_STATUS_DIMENSION_ID and MATOMO_BOT_NAME_DIMENSION_ID must be different.'
+    );
+  }
+  if (
+    matomoBotTrackingMode === 'visits' &&
+    (matomoBotStatusDimensionId === undefined ||
+      matomoBotNameDimensionId === undefined)
+  ) {
+    throw new Error(
+      'MATOMO_BOT_TRACKING_MODE=visits requires MATOMO_BOT_STATUS_DIMENSION_ID and MATOMO_BOT_NAME_DIMENSION_ID to label bot visits.'
+    );
+  }
   const logLevel = (env.LOG_LEVEL || 'warn').toLowerCase() as LogLevel;
   const allowlistPattern =
     env.USER_AGENT_ALLOWLIST_REGEX ||
-    (matomoRecMode === 2 ? '.*' : defaultAllowlistPattern);
+    (matomoRecMode === 2 || matomoBotTrackingMode === 'visits'
+      ? '.*'
+      : defaultAllowlistPattern);
   const httpMethodAllowlist = parseHttpMethodAllowlist(
     env.HTTP_METHOD_ALLOWLIST,
     defaultHttpMethodAllowlist
@@ -136,6 +189,9 @@ export function getConfig(
     matomoSiteId,
     matomoTokenAuth,
     matomoRecMode,
+    matomoBotTrackingMode,
+    matomoBotStatusDimensionId,
+    matomoBotNameDimensionId,
     cloudFrontDefaultProtocol:
       env.CLOUDFRONT_DEFAULT_PROTOCOL?.trim() || undefined,
     cloudFrontDefaultHost: env.CLOUDFRONT_DEFAULT_HOST?.trim() || undefined,

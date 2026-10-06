@@ -23,7 +23,13 @@ export async function sendLogLinesToMatomo(
   try {
     for await (const entry of parseCloudFrontLines(lines, log)) {
       if (
-        !isUserAgentAllowed(entry, allowRegex, config.cloudFrontDecodeUserAgent)
+        !isUserAgentAllowed(
+          entry,
+          allowRegex,
+          config.cloudFrontDecodeUserAgent,
+          config.matomoBotTrackingMode === 'visits' &&
+            config.matomoRecMode !== 2
+        )
       ) {
         skipped += 1;
         continue;

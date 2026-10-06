@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildMatomoPayload } from '../src/matomo.js';
 import { getConfig } from '../src/config.js';
 import type { MatomoConfig } from '../src/types.js';
+import { buildMatomoRequestPayload } from '../src/http.js';
 
 const config = getConfig({
   MATOMO_URL: 'https://analytics.example.com',
@@ -11,6 +12,97 @@ const config = getConfig({
 const configNoAllowlist = { ...config, userAgentAllowlistRegex: undefined };
 
 describe('buildMatomoPayload', () => {
+  describe('bot visits and action dimensions', () => {
+    const entry = {
+      date: '2026-10-06',
+      time: '10:00:00',
+      'cs-protocol': 'https',
+      'x-host-header': 'example.com',
+      'cs-uri-stem': '/'
+    };
+    const visitConfig = getConfig({
+      MATOMO_URL: 'https://analytics.example.com',
+      MATOMO_SITE_ID: '99',
+      MATOMO_REC_MODE: '2',
+      MATOMO_BOT_TRACKING_MODE: 'visits',
+      MATOMO_BOT_STATUS_DIMENSION_ID: '3',
+      MATOMO_BOT_NAME_DIMENSION_ID: '8',
+      CLOUDFRONT_DECODE_USER_AGENT: 'true'
+    });
+
+    it.each([
+      [
+        'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        'Googlebot'
+      ],
+      [
+        'Mozilla/5.0%20(compatible;%20ChatGPT-User/1.0;%20+https://openai.com/bot)',
+        'ChatGPT-User'
+      ],
+      ['GPTBot/1.2', 'GPTBot'],
+      ['Perplexity-User/1.0', 'Perplexity-User'],
+      ['CustomCrawler/1.0', 'Unknown bot']
+    ])('records %s as a labeled bot visit (%s)', (userAgent, name) => {
+      const payload = buildMatomoPayload(
+        { ...entry, 'cs(User-Agent)': userAgent },
+        visitConfig
+      );
+      const params = new URLSearchParams(
+        buildMatomoRequestPayload(payload).slice(1)
+      );
+      expect(params.get('rec')).toBe('1');
+      expect(params.get('bots')).toBe('1');
+      expect(params.has('recMode')).toBe(false);
+      expect(params.get('dimension3')).toBe('Bot');
+      expect(params.get('dimension8')).toBe(name);
+      expect(params.get('ua')).toBe(decodeURIComponent(userAgent));
+      expect(params.get('url')).toBe('https://example.com/');
+    });
+
+    it('labels browsers without claiming a verified human identity', () => {
+      const payload = buildMatomoPayload(
+        { ...entry, 'cs(User-Agent)': 'Mozilla/5.0 Safari/604.1' },
+        visitConfig
+      );
+      expect(payload.recMode).toBe(2);
+      expect(payload).not.toHaveProperty('bots');
+      expect(payload.dimension3).toBe('Not detected');
+      expect(payload.dimension8).toBe('Not detected');
+    });
+
+    it.each([1, 2] as const)(
+      'permits bot visits and downloads independently of recording mode %s',
+      (mode) => {
+        const payload = buildMatomoPayload(
+          {
+            ...entry,
+            'cs(User-Agent)': 'Googlebot/2.1',
+            'cs-uri-stem': '/file.pdf'
+          },
+          { ...visitConfig, matomoRecMode: mode }
+        );
+        expect(payload.bots).toBe(1);
+        expect(payload).not.toHaveProperty('recMode');
+        expect(payload.download).toBe('https://example.com/file.pdf');
+        expect(payload.dimension8).toBe('Googlebot');
+      }
+    );
+
+    it.each([undefined, 'native'] as const)(
+      'preserves native routing when bot tracking mode is %s',
+      (mode) => {
+        const payload = buildMatomoPayload(
+          { ...entry, 'cs(User-Agent)': 'ChatGPT-User/1.0' },
+          { ...visitConfig, matomoBotTrackingMode: mode }
+        );
+        expect(payload.recMode).toBe(2);
+        expect(payload).not.toHaveProperty('bots');
+        expect(payload).not.toHaveProperty('dimension3');
+        expect(payload).not.toHaveProperty('dimension8');
+      }
+    );
+  });
+
   it('builds payload with full URL and converted numeric fields', () => {
     const entry = {
       date: '2025-02-18',

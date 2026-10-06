@@ -29,7 +29,8 @@ export async function buildRequestsFromFile(
       !isUserAgentAllowed(
         entry,
         config.userAgentAllowlistRegex,
-        config.cloudFrontDecodeUserAgent
+        config.cloudFrontDecodeUserAgent,
+        config.matomoBotTrackingMode === 'visits' && config.matomoRecMode !== 2
       )
     ) {
       continue;

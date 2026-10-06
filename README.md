@@ -14,7 +14,10 @@ Serverless pipeline (TypeScript, Node 24) that consumes CloudFront access logs f
 - `MATOMO_SITE_ID` (required): Matomo site ID (integer).
 - `MATOMO_TIMEOUT_MS` (optional, default `5000`): HTTP timeout in ms.
 - `MATOMO_TOKEN_AUTH` (optional, recommended): Matomo token; required when `cdt` is older than 24 hours (Matomo bulk import rule), or when `CLOUDFRONT_BEHIND_CLOUDFLARE` is enabled. For client IP overrides, the token must have write or admin permission for the Matomo site. Sent as the top-level `token_auth` in the bulk JSON body and as `Authorization: Bearer <token>` for compatibility.
-- `MATOMO_REC_MODE` (optional, default `1`): `1` tracks only supported AI bots. Set `2` to enable automatic recording of normal visits/actions and supported AI bots, routed by Matomo to their respective reports. In automatic mode, the default user agent filter permits all non-empty user agents. Other values are rejected.
+- `MATOMO_REC_MODE` (optional, default `1`): `1` tracks bots only; `2` also includes normal visits/actions. With `MATOMO_BOT_TRACKING_MODE=native`, bots are limited to supported AI assistants and use Matomo's separate AI reports. With `visits`, detected bots use the standard visitor reports, including Googlebot and ChatGPT. Other values are rejected.
+- `MATOMO_BOT_TRACKING_MODE` (optional, default `native`): `native` preserves Matomo's AI bot recording. Set `visits` to record all bots detected by this tracker as visits/actions and label each request with its probable bot identity. Requires both dimension IDs below. Values are trimmed and case-insensitive; other values are rejected.
+- `MATOMO_BOT_STATUS_DIMENSION_ID` (required with `visits`): ID of an active, **Action** scoped Custom Dimension for this Matomo site, such as `Traffic type`. Values are `Bot` or `Not detected`.
+- `MATOMO_BOT_NAME_DIMENSION_ID` (required with `visits`): ID of another active, **Action** scoped Custom Dimension, such as `Bot name`. Values include `Googlebot`, `ChatGPT-User`, `GPTBot`, `Unknown bot`, and `Not detected`. Both IDs must be integers from `1` to `999` and must be different. These dimensions are sent only in `visits` mode; create them in Matomo before enabling it.
 - `CLOUDFRONT_DECODE_USER_AGENT` (optional, default disabled): Set `true` or `1` to URL-decode `cs(User-Agent)` once before matching `USER_AGENT_ALLOWLIST_REGEX` and encoding the Matomo request. Plain user agents and literal `+` characters are preserved; invalid percent encoding falls back to the original value without discarding the entry. Unset, empty, `false`, or `0` disables decoding; values are trimmed and case-insensitive. Other values are rejected. Applies to both Lambda processing and `parse:log`.
 - `CLOUDFRONT_DEFAULT_PROTOCOL` (optional): Fallback protocol, e.g. `https`, used when a log entry has no `cs-protocol` or its value is empty/`-`.
 - `CLOUDFRONT_DEFAULT_HOST` (optional): Fallback host, e.g. `www.example.com` (without protocol or path), used when a log entry has no `x-host-header` or its value is empty/`-`. Values present in the log always take precedence over these fallbacks. If either URL field is missing and its fallback is unset, the entry cannot be tracked.
@@ -32,7 +35,7 @@ Serverless pipeline (TypeScript, Node 24) that consumes CloudFront access logs f
   Example: `^[^?]+\\.(?:pdf|zip|docx?)(?:\\?|$)`
 
 - `LOG_LEVEL` (optional, default `warn`): `silent|error|warn|info|debug`.
-- `USER_AGENT_ALLOWLIST_REGEX` (optional): Case-insensitive regex to permit user agents; non-matching entries are skipped. In bot-only mode (default), the allowlist is `ChatGPT-User|MistralAI-User|Gemini-Deep-Research|Claude-User|Perplexity-User|Google-NotebookLM|Google-GeminiNotebook`. With `MATOMO_REC_MODE=2`, it defaults to `.*`, permitting all non-empty user agents, including normal browsers and AI bots. Explicitly configured patterns still restrict tracking in either mode; remove an existing AI-only pattern or set it to `.*` to include normal visits.
+- `USER_AGENT_ALLOWLIST_REGEX` (optional): Case-insensitive regex to permit user agents; non-matching entries are skipped. With the default `native` mode and `MATOMO_REC_MODE=1`, the allowlist is `ChatGPT-User|MistralAI-User|Gemini-Deep-Research|Claude-User|Perplexity-User|Google-NotebookLM|Google-GeminiNotebook`. With `visits` mode or `MATOMO_REC_MODE=2`, it defaults to `.*`, permitting all non-empty user agents through this filter. Bot-only `visits` mode then excludes requests with no detected bot. Explicitly configured patterns still restrict tracking in every mode; remove an existing AI-only pattern or set it to `.*` to include other bots and normal visits.
 - `HTTP_METHOD_ALLOWLIST` (optional, default `GET`): Comma-separated list of HTTP methods to track (e.g. `GET,POST`); empty/unset uses the default. Requires `cs-method` to be present in the parsed log entry (via CloudFront `#Fields` or default field order).
 - `URL_EXCLUDE_REGEX` (optional): Case-insensitive regex to skip tracking for matching URLs. This regex runs against the full URL (`protocol://host/path?query`) and defaults to excluding common static assets and non-page resources:
   - Frontend assets: `.css`, `.js`, `.mjs`
@@ -50,14 +53,16 @@ Serverless pipeline (TypeScript, Node 24) that consumes CloudFront access logs f
 
 ## Recording Modes
 
-Automatic recording is enabled only by setting `MATOMO_REC_MODE=2` in the Lambda environment variables. Leaving the variable unset, empty, or set to `1` preserves AI bot-only tracking.
+Set `MATOMO_REC_MODE=2` in the Lambda environment to include normal visits. Leaving it unset, empty, or set to `1` selects bot-only tracking. `MATOMO_BOT_TRACKING_MODE` determines which bots are included and where they appear:
 
-| `MATOMO_REC_MODE` | Requests sent by the default user agent filter | Matomo recording mode                                      |
-| ----------------- | ---------------------------------------------- | ---------------------------------------------------------- |
-| Unset or `1`      | Supported AI bot user agents                   | Bot only (`recMode=1`)                                     |
-| `2`               | All non-empty user agents, including browsers  | Automatic visits/actions and AI bot tracking (`recMode=2`) |
+| `MATOMO_BOT_TRACKING_MODE` | `MATOMO_REC_MODE` | Requests sent with the default filters | Matomo reports                                                               |
+| -------------------------- | ----------------- | -------------------------------------- | ---------------------------------------------------------------------------- |
+| Unset or `native`          | Unset or `1`      | Supported AI assistants                | Separate AI Chatbot reports (`recMode=1`)                                    |
+| Unset or `native`          | `2`               | All non-empty user agents              | Normal visits and supported AI assistants routed automatically (`recMode=2`) |
+| `visits`                   | Unset or `1`      | Detected bots                          | Standard visitor reports, with bot dimensions                                |
+| `visits`                   | `2`               | All non-empty user agents              | Standard visitor reports, with bot dimensions                                |
 
-To include normal visits alongside AI bots, configure the Lambda with:
+To include normal visits alongside the separate native AI reports, configure the Lambda with:
 
 ```dotenv
 MATOMO_URL=https://analytics.example.com
@@ -70,7 +75,31 @@ LOG_LEVEL=info
 
 Replace the Matomo URL, site ID, and website host with your values. If `USER_AGENT_ALLOWLIST_REGEX` is already configured to allow only AI bots, remove that override or set it to `.*`; an explicit filter takes precedence in both modes. `GET` filtering and static asset exclusions still apply in automatic mode.
 
-Normal visits appear in the standard visitor reports. Supported AI chatbot requests appear separately in **AI Assistants → AI Chatbots Overview**. For self-hosted Matomo, activate the `BotTracking` plugin to use the AI Chatbot reports. Use a Matomo version that supports the selected recording mode; see the [Tracking API](https://developer.matomo.org/api-reference/tracking-api#tracking-bots) and [AI Chatbot report setup](https://matomo.org/faq/reports/ai-chatbots-overview-report/).
+In `native` mode, normal visits appear in the standard visitor reports and supported AI chatbot requests appear separately in **AI Assistants → AI Chatbots Overview**. Other detected crawlers are discarded by Matomo. For self-hosted Matomo, activate the `BotTracking` plugin to use the AI Chatbot reports. Use a Matomo version that supports the selected recording mode; see the [Tracking API](https://developer.matomo.org/api-reference/tracking-api#tracking-bots) and [AI Chatbot report setup](https://matomo.org/faq/reports/ai-chatbots-overview-report/).
+
+## Bot Identity in Visitor Reports
+
+To include detected bots such as Googlebot, Bingbot, ChatGPT-User, GPTBot, ClaudeBot, and PerplexityBot in the standard visitor reports:
+
+1. In Matomo, select the site corresponding to `MATOMO_SITE_ID` and open **Administration → Websites → Custom Dimensions**.
+2. Create and activate two dimensions with scope **Action**, named `Traffic type` and `Bot name`. Note their IDs. Action scope preserves the classification of each request.
+3. Rebuild and package the Lambda, upload the updated ZIP, and set these environment variables:
+
+```dotenv
+MATOMO_BOT_TRACKING_MODE=visits
+MATOMO_BOT_STATUS_DIMENSION_ID=1
+MATOMO_BOT_NAME_DIMENSION_ID=2
+MATOMO_REC_MODE=2
+CLOUDFRONT_DECODE_USER_AGENT=true
+```
+
+Replace `1` and `2` with the IDs Matomo assigned to your dimensions. Keep your existing Matomo URL, site ID, and URL fallback settings. Remove any explicit AI-only `USER_AGENT_ALLOWLIST_REGEX` or set it to `.*`. Use `MATOMO_REC_MODE=1` to include only detected bots. HTTP method and URL exclusions still apply.
+
+Detected requests receive `Traffic type=Bot` and their probable bot name; generic bot/crawler/spider product names receive `Bot name=Unknown bot`. Other requests receive `Not detected` in both dimensions. Detection uses the declared user agent and cannot verify the sender or identify bots that disguise themselves as ordinary browsers.
+
+The named dimension reports appear under **Behaviours**. In **Visitors → Visits Log**, hover an action to view its dimensions. Bot requests contribute to ordinary visit/action statistics; use a segment excluding `Traffic type=Bot` when reviewing other traffic. See Matomo's [dimension setup](https://matomo.org/faq/reporting-tools/create-track-and-manage-custom-dimensions/) and [report and Visits Log guide](https://matomo.org/faq/reporting-tools/view-a-custom-dimension-report/).
+
+In `visits` mode, every detected bot, including ChatGPT-User, is sent with `bots=1` and without `recMode`, as required by the [Tracking API](https://developer.matomo.org/api-reference/tracking-api#tracking-bots). These requests do not populate the native AI Chatbot reports. This setting applies to newly imported requests and does not backfill or relabel data already stored in Matomo.
 
 ## Browser and Browser Engine Detection
 
@@ -85,7 +114,7 @@ CLOUDFRONT_DECODE_USER_AGENT=true
 
 Upload the rebuilt Lambda ZIP and set these variables in its environment. An explicit `USER_AGENT_ALLOWLIST_REGEX` still takes precedence; remove an AI-only override or set it to `.*` to include normal browsers. The decode flag is independent of recording mode and also applies to local `parse:log` runs. It is disabled by default because changing the user agent can affect allowlist matches and Matomo's visitor matching.
 
-Matomo derives browser and engine on the server from `ua`; this pipeline does not need to send separate browser fields or add JavaScript tracking. See the [Tracking API](https://developer.matomo.org/api-reference/tracking-api) and Matomo's [browser engine detection](https://github.com/matomo-org/matomo/blob/5.x-dev/plugins/DevicesDetection/Columns/BrowserEngine.php). For self-hosted installations, check that `DevicesDetection` is active; it is included in Matomo's [default plugins](https://github.com/matomo-org/matomo/blob/5.x-dev/config/global.ini.php). Check normal visitor reports for browser dimensions: AI bot tracking uses a separate set of fields and reports. Deploying this change does not repair already stored visits; check newly imported browser visits after enabling it.
+Matomo derives browser and engine on the server from `ua`; this pipeline does not need to send separate browser fields or add JavaScript tracking. See the [Tracking API](https://developer.matomo.org/api-reference/tracking-api) and Matomo's [browser engine detection](https://github.com/matomo-org/matomo/blob/5.x-dev/plugins/DevicesDetection/Columns/BrowserEngine.php). For self-hosted installations, check that `DevicesDetection` is active; it is included in Matomo's [default plugins](https://github.com/matomo-org/matomo/blob/5.x-dev/config/global.ini.php). Check normal visitor reports for browser dimensions: native AI bot tracking uses a separate set of fields and reports. Deploying this change does not repair already stored visits; check newly imported browser visits after enabling it.
 
 ## Cloudflare Reverse Proxy
 
@@ -202,10 +231,11 @@ Example CloudFront logging fields (set on the distribution) to cover required/op
 
 - Reads S3 objects as gzip streams, splits into lines, and accepts either whitespace-separated CloudFront logs (with an optional `#Fields` header) or JSON Lines / NDJSON (one flat JSON object per line). Numeric JSON values are converted to strings; `-` and `null` become empty strings. Malformed lines are skipped and logged.
 - Maps fields to Matomo payload:
-  - Required: `idsite`, `rec:1`, `recMode` (from `MATOMO_REC_MODE`, default `1`), `url` (protocol+host+path+query), `cdt` (`Y-m-d H:i:s`), `ua`, `source:'CloudFront'`.
+  - Required: `idsite`, `rec:1`, `url` (protocol+host+path+query), `cdt` (`Y-m-d H:i:s`), `ua`, `source:'CloudFront'`.
+  - Recording: `recMode` from `MATOMO_REC_MODE` (default `1`), except detected bots in `visits` mode, which omit it and send `bots:1`. In `visits` mode, also sends the configured `dimension<ID>` values for each request.
   - Optional: `http_status`, `bw_bytes`, `pf_srv`, and `cip` when `CLOUDFRONT_BEHIND_CLOUDFLARE` is enabled and a valid client IP can be selected.
-- Uses bot-only recording by default (`recMode=1`). When explicitly enabled with `MATOMO_REC_MODE=2`, normal requests are processed as visits/actions, while supported AI bots are processed separately in AI Chatbot reports. This does not force tracking of other crawlers excluded by Matomo. See the [Matomo Tracking API](https://developer.matomo.org/api-reference/tracking-api#tracking-bots).
-- Filters requests by user agent using `USER_AGENT_ALLOWLIST_REGEX`; the default is an AI bot allowlist in bot-only mode and all non-empty user agents in automatic mode. Non-matching or empty user agents are skipped before payload assembly.
+- Uses native AI bot-only recording by default. `MATOMO_REC_MODE=2` includes normal visits. `MATOMO_BOT_TRACKING_MODE=visits` records detected bots in standard visitor reports with bot identity dimensions, and bot-only mode skips requests with no detected bot. See the [Matomo Tracking API](https://developer.matomo.org/api-reference/tracking-api#tracking-bots).
+- Filters requests by user agent using `USER_AGENT_ALLOWLIST_REGEX`; the default is an AI bot allowlist in native bot-only mode and all non-empty user agents in visits or automatic mode. Non-matching or empty user agents are skipped before payload assembly.
 - When `CLOUDFRONT_DECODE_USER_AGENT` is enabled, URL-decodes `cs(User-Agent)` once before user agent filtering and Matomo request encoding. Malformed encoding keeps the original user agent.
 - Filters requests by HTTP method using `HTTP_METHOD_ALLOWLIST` (defaults to `GET` only).
 - Skips entries whose URL matches `URL_EXCLUDE_REGEX` (defaults to common static assets like js/css, images, fonts, source maps).
@@ -231,7 +261,7 @@ If batches are sent but no data appears:
 
 1. For browser visits, confirm the deployed bundle contains support for `MATOMO_REC_MODE` and set that variable to `2`. Expanding `USER_AGENT_ALLOWLIST_REGEX` alone does not enable visit recording in bot-only mode.
 2. Check the selected Matomo site's ID against `MATOMO_SITE_ID`, and select the date of the requests in the source logs. The `cdt` parameter preserves their UTC timestamp, rather than using the Lambda invocation time.
-3. Look in the appropriate report: standard visitor reports for browser traffic, AI Chatbot reports for supported AI bots. Check the `BotTracking` plugin for self-hosted AI reports.
+3. Look in the appropriate report: standard visitor reports for browser traffic and bots in `visits` mode, or AI Chatbot reports for supported AI bots in `native` mode. For `visits`, confirm both configured dimensions are active Action dimensions on the selected site. Check the `BotTracking` plugin for self-hosted native AI reports.
 4. Check for explicit user agent filters, excluded URLs, and missing protocol/host fallbacks. Matomo may also exclude requests according to its own bot and traffic filtering rules.
 
 ## Local Debugging

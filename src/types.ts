@@ -14,6 +14,9 @@ export interface MatomoConfig {
   matomoSiteId: number;
   matomoTokenAuth?: string;
   matomoRecMode?: 1 | 2;
+  matomoBotTrackingMode?: 'native' | 'visits';
+  matomoBotStatusDimensionId?: number;
+  matomoBotNameDimensionId?: number;
   cloudFrontDefaultProtocol?: string;
   cloudFrontDefaultHost?: string;
   cloudFrontBehindCloudflare?: boolean;
@@ -31,7 +34,8 @@ export interface MatomoPayload {
   [key: string]: string | number | boolean | undefined;
   idsite: number;
   rec: 1;
-  recMode: 1 | 2;
+  recMode?: 1 | 2;
+  bots?: 1;
   url: string;
   source: 'CloudFront';
   cdt: string;

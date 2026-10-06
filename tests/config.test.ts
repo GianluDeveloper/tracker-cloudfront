@@ -14,6 +14,9 @@ describe('getConfig', () => {
       matomoSiteId: 42,
       matomoTokenAuth: undefined,
       matomoRecMode: 1,
+      matomoBotTrackingMode: 'native',
+      matomoBotStatusDimensionId: undefined,
+      matomoBotNameDimensionId: undefined,
       cloudFrontBehindCloudflare: false,
       cloudFrontDecodeUserAgent: false,
       cloudFrontDefaultProtocol: undefined,
@@ -115,6 +118,142 @@ describe('getConfig', () => {
       );
     }
   );
+
+  it.each([undefined, '', ' ', 'native', ' NATIVE '])(
+    'preserves native bot tracking for MATOMO_BOT_TRACKING_MODE=%j',
+    (mode) => {
+      const config = getConfig({ ...baseEnv, MATOMO_BOT_TRACKING_MODE: mode });
+      expect(config.matomoBotTrackingMode).toBe('native');
+      expect(config.userAgentAllowlistRegex?.test('ChatGPT-User/1.0')).toBe(
+        true
+      );
+      expect(config.userAgentAllowlistRegex?.test('Googlebot/2.1')).toBe(false);
+      expect(config.userAgentAllowlistRegex?.test('Mozilla/5.0')).toBe(false);
+    }
+  );
+
+  it.each(['visits', ' VISITS '])(
+    'enables labeled bot visits for MATOMO_BOT_TRACKING_MODE=%j',
+    (mode) => {
+      const config = getConfig({
+        ...baseEnv,
+        MATOMO_BOT_TRACKING_MODE: mode,
+        MATOMO_BOT_STATUS_DIMENSION_ID: ' 1 ',
+        MATOMO_BOT_NAME_DIMENSION_ID: '999'
+      });
+      expect(config).toMatchObject({
+        matomoRecMode: 1,
+        matomoBotTrackingMode: 'visits',
+        matomoBotStatusDimensionId: 1,
+        matomoBotNameDimensionId: 999
+      });
+      expect(config.userAgentAllowlistRegex).toEqual(/.*/i);
+      expect(config.userAgentAllowlistRegex?.test('Googlebot/2.1')).toBe(true);
+    }
+  );
+
+  it('keeps explicit user agent filters and automatic mode with bot visits', () => {
+    const config = getConfig({
+      ...baseEnv,
+      MATOMO_REC_MODE: '2',
+      MATOMO_BOT_TRACKING_MODE: 'visits',
+      MATOMO_BOT_STATUS_DIMENSION_ID: '3',
+      MATOMO_BOT_NAME_DIMENSION_ID: '4',
+      USER_AGENT_ALLOWLIST_REGEX: 'Googlebot'
+    });
+    expect(config.matomoRecMode).toBe(2);
+    expect(config.userAgentAllowlistRegex).toEqual(/Googlebot/i);
+    expect(config.userAgentAllowlistRegex?.test('ChatGPT-User/1.0')).toBe(
+      false
+    );
+  });
+
+  it('keeps explicit user agent filters in bot-only visits mode', () => {
+    const config = getConfig({
+      ...baseEnv,
+      MATOMO_BOT_TRACKING_MODE: 'visits',
+      MATOMO_BOT_STATUS_DIMENSION_ID: '3',
+      MATOMO_BOT_NAME_DIMENSION_ID: '4',
+      USER_AGENT_ALLOWLIST_REGEX: 'Googlebot'
+    });
+    expect(config.matomoRecMode).toBe(1);
+    expect(config.userAgentAllowlistRegex).toEqual(/Googlebot/i);
+  });
+
+  it.each(['mixed', 'auto', 'visit', '1', 'visits-extra'])(
+    'rejects invalid MATOMO_BOT_TRACKING_MODE=%j',
+    (mode) => {
+      expect(() =>
+        getConfig({ ...baseEnv, MATOMO_BOT_TRACKING_MODE: mode })
+      ).toThrow(/Invalid MATOMO_BOT_TRACKING_MODE/);
+    }
+  );
+
+  it.each([undefined, '', ' '])(
+    'treats blank bot dimension IDs as unset in native mode (%j)',
+    (value) => {
+      const config = getConfig({
+        ...baseEnv,
+        MATOMO_BOT_STATUS_DIMENSION_ID: value,
+        MATOMO_BOT_NAME_DIMENSION_ID: value
+      });
+      expect(config.matomoBotStatusDimensionId).toBeUndefined();
+      expect(config.matomoBotNameDimensionId).toBeUndefined();
+    }
+  );
+
+  it.each(['MATOMO_BOT_STATUS_DIMENSION_ID', 'MATOMO_BOT_NAME_DIMENSION_ID'])(
+    'validates %s as a complete positive integer within Matomo limits',
+    (name) => {
+      for (const value of [
+        '0',
+        '-1',
+        '1000',
+        '1.5',
+        '1invalid',
+        '1e2',
+        '+1',
+        'NaN',
+        'Infinity'
+      ]) {
+        expect(() => getConfig({ ...baseEnv, [name]: value })).toThrow(
+          `Invalid ${name}. Expected an integer between 1 and 999.`
+        );
+      }
+    }
+  );
+
+  it.each(['native', 'visits'])(
+    'rejects conflicting bot dimension IDs in %s mode',
+    (mode) => {
+      expect(() =>
+        getConfig({
+          ...baseEnv,
+          MATOMO_BOT_TRACKING_MODE: mode,
+          MATOMO_BOT_STATUS_DIMENSION_ID: ' 7 ',
+          MATOMO_BOT_NAME_DIMENSION_ID: '7'
+        })
+      ).toThrow(/must be different/);
+    }
+  );
+
+  it.each([
+    {},
+    { MATOMO_BOT_STATUS_DIMENSION_ID: '1' },
+    { MATOMO_BOT_NAME_DIMENSION_ID: '2' },
+    { MATOMO_BOT_STATUS_DIMENSION_ID: ' ', MATOMO_BOT_NAME_DIMENSION_ID: '2' },
+    { MATOMO_BOT_STATUS_DIMENSION_ID: '1', MATOMO_BOT_NAME_DIMENSION_ID: '' }
+  ])('requires both dimension IDs for visits mode (%j)', (dimensions) => {
+    expect(() =>
+      getConfig({
+        ...baseEnv,
+        MATOMO_BOT_TRACKING_MODE: 'visits',
+        ...dimensions
+      })
+    ).toThrow(
+      /MATOMO_BOT_TRACKING_MODE=visits requires MATOMO_BOT_STATUS_DIMENSION_ID and MATOMO_BOT_NAME_DIMENSION_ID/
+    );
+  });
 
   it('treats blank CloudFront fallbacks as unset', () => {
     const config = getConfig({

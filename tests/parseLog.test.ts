@@ -67,6 +67,59 @@ describe('buildRequestsFromFile', () => {
     expect(requests[0]).toContain('idsite=1');
   });
 
+  it.each([
+    { mode: '1', gz: false },
+    { mode: '1', gz: true },
+    { mode: '2', gz: false },
+    { mode: '2', gz: true }
+  ])(
+    'generates bot visit metadata locally (recording mode: $mode, gzip: $gz)',
+    async ({ mode, gz }) => {
+      const entries = [
+        'Googlebot/2.1',
+        'ChatGPT-User/1.0',
+        'Mozilla/5.0%20Safari/604.1'
+      ].map((ua) =>
+        JSON.stringify({
+          date: '2026-10-06',
+          time: '10:00:00',
+          'cs-method': 'GET',
+          'cs(User-Agent)': ua
+        })
+      );
+      const { filePath, tmpDir } = await writeTempFile(entries.join('\n'), gz);
+      tmpDirs.push(tmpDir);
+      const botConfig = getConfig({
+        MATOMO_URL: 'https://analytics.example.com',
+        MATOMO_SITE_ID: '1',
+        MATOMO_REC_MODE: mode,
+        MATOMO_BOT_TRACKING_MODE: 'visits',
+        MATOMO_BOT_STATUS_DIMENSION_ID: '3',
+        MATOMO_BOT_NAME_DIMENSION_ID: '8',
+        CLOUDFRONT_DECODE_USER_AGENT: 'true',
+        CLOUDFRONT_DEFAULT_PROTOCOL: 'https',
+        CLOUDFRONT_DEFAULT_HOST: 'example.com'
+      });
+      const requests = (await buildRequestsFromFile(filePath, botConfig)).map(
+        (request) => new URLSearchParams(request.slice(1))
+      );
+      expect(requests.map((request) => request.get('dimension8'))).toEqual(
+        mode === '2'
+          ? ['Googlebot', 'ChatGPT-User', 'Not detected']
+          : ['Googlebot', 'ChatGPT-User']
+      );
+      expect(requests[0].get('bots')).toBe('1');
+      expect(requests[0].has('recMode')).toBe(false);
+      expect(requests[1].get('bots')).toBe('1');
+      expect(requests[1].has('recMode')).toBe(false);
+      if (mode === '2') {
+        expect(requests[2].get('bots')).toBeNull();
+        expect(requests[2].get('dimension3')).toBe('Not detected');
+        expect(requests[2].get('ua')).toBe('Mozilla/5.0 Safari/604.1');
+      }
+    }
+  );
+
   it.each([false, true])(
     'builds Matomo requests from JSON Lines using environment fallbacks (gzip: %s)',
     async (gz) => {
