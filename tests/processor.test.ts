@@ -48,6 +48,106 @@ const toAsyncLines = (content: string) =>
   })();
 
 describe('buildPayloadsFromLogContent', () => {
+  it('routes each domain in a mixed batch to its mapped Matomo site', async () => {
+    const sender = vi
+      .spyOn(http, 'sendMatomoBatch')
+      .mockResolvedValue(undefined);
+    try {
+      const mappedConfig = getConfig({
+        MATOMO_URL: 'https://analytics.example.com',
+        MATOMO_SITE_ID: '1',
+        MATOMO_SITE_ID_MAP: '{"latopratico.com":2,"guida.com":3}',
+        MATOMO_REC_MODE: '2',
+        CLOUDFRONT_DEFAULT_PROTOCOL: 'https',
+        CLOUDFRONT_DEFAULT_HOST: 'guida.com'
+      });
+      const hosts = [
+        'latopratico.com',
+        'GUIDA.COM.:443',
+        'unknown.com',
+        'www.latopratico.com',
+        undefined
+      ];
+      const entries = hosts.map((host) =>
+        JSON.stringify({
+          date: '2026-10-06',
+          time: '10:00:00',
+          'cs-method': 'GET',
+          'cs-uri-stem': '/page',
+          'x-host-header': host,
+          'cs(User-Agent)': 'Mozilla/5.0 Safari/604.1'
+        })
+      );
+      await sendLogContentToMatomo(entries.join('\n'), mappedConfig);
+      expect(sender).toHaveBeenCalledTimes(1);
+      const requests = (sender.mock.calls[0][1] as string[]).map(
+        (request) => new URLSearchParams(request.slice(1))
+      );
+      expect(requests.map((request) => request.get('idsite'))).toEqual([
+        '2',
+        '3',
+        '1',
+        '1',
+        '3'
+      ]);
+      expect(requests.map((request) => request.get('url'))).toEqual(
+        hosts.map((host) => `https://${host ?? 'guida.com'}/page`)
+      );
+      expect(requests.every((request) => request.get('recMode') === '2')).toBe(
+        true
+      );
+    } finally {
+      sender.mockRestore();
+    }
+  });
+
+  it('preserves bot download metadata and visitor IP when routing to a mapped site', async () => {
+    const sender = vi
+      .spyOn(http, 'sendMatomoBatch')
+      .mockResolvedValue(undefined);
+    try {
+      const mappedConfig = getConfig({
+        MATOMO_URL: 'https://analytics.example.com',
+        MATOMO_SITE_ID: '1',
+        MATOMO_SITE_ID_MAP: '{"latopratico.com":2}',
+        MATOMO_REC_MODE: '2',
+        MATOMO_BOT_TRACKING_MODE: 'visits',
+        MATOMO_BOT_STATUS_DIMENSION_ID: '3',
+        MATOMO_BOT_NAME_DIMENSION_ID: '8',
+        MATOMO_TOKEN_AUTH: 'test-token',
+        CLOUDFRONT_BEHIND_CLOUDFLARE: 'true',
+        CLOUDFRONT_DEFAULT_PROTOCOL: 'https'
+      });
+      await sendLogContentToMatomo(
+        JSON.stringify({
+          date: '2026-10-06',
+          time: '10:00:00',
+          'cs-method': 'GET',
+          'x-host-header': 'latopratico.com',
+          'cs-uri-stem': '/guide.pdf',
+          'cs(User-Agent)': 'Googlebot/2.1',
+          'c-ip': '172.68.245.145',
+          'cf-connecting-ip': '203.0.113.17'
+        }),
+        mappedConfig
+      );
+      expect(sender).toHaveBeenCalledTimes(1);
+      const requests = sender.mock.calls[0][1] as string[];
+      expect(requests).toHaveLength(1);
+      const request = new URLSearchParams(requests[0].slice(1));
+      expect(request.get('idsite')).toBe('2');
+      expect(request.get('download')).toBe('https://latopratico.com/guide.pdf');
+      expect(request.get('bots')).toBe('1');
+      expect(request.has('recMode')).toBe(false);
+      expect(request.get('dimension3')).toBe('Bot');
+      expect(request.get('dimension8')).toBe('Googlebot');
+      expect(request.get('cip')).toBe('203.0.113.17');
+      expect(sender.mock.calls[0][4]).toBe('test-token');
+    } finally {
+      sender.mockRestore();
+    }
+  });
+
   it.each([
     { mode: '1', names: ['Googlebot', 'ChatGPT-User', 'Unknown bot'] },
     {

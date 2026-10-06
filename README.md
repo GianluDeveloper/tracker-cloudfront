@@ -11,7 +11,8 @@ Serverless pipeline (TypeScript, Node 24) that consumes CloudFront access logs f
 ## Environment Variables
 
 - `MATOMO_URL` (required): Base Matomo URL, e.g. `https://analytics.example.com` or `https://analytics.example.com/matomo`.
-- `MATOMO_SITE_ID` (required): Matomo site ID (integer).
+- `MATOMO_SITE_ID` (required): Default Matomo site ID (integer), also used for domains not matched by `MATOMO_SITE_ID_MAP`.
+- `MATOMO_SITE_ID_MAP` (optional): JSON object mapping hostnames to Matomo site IDs, e.g. `{"latopratico.com":2,"guida.com":3}`. A matched domain overrides `MATOMO_SITE_ID`; unset, blank, or `{}` preserves the default for every request. Values must be JSON numbers that are positive safe integers. Malformed JSON, invalid hostnames, and duplicate domains after normalization are rejected. See Domain Routing below.
 - `MATOMO_TIMEOUT_MS` (optional, default `5000`): HTTP timeout in ms.
 - `MATOMO_TOKEN_AUTH` (optional, recommended): Matomo token; required when `cdt` is older than 24 hours (Matomo bulk import rule), or when `CLOUDFRONT_BEHIND_CLOUDFLARE` is enabled. For client IP overrides, the token must have write or admin permission for the Matomo site. Sent as the top-level `token_auth` in the bulk JSON body and as `Authorization: Bearer <token>` for compatibility.
 - `MATOMO_REC_MODE` (optional, default `1`): `1` tracks bots only; `2` also includes normal visits/actions. With `MATOMO_BOT_TRACKING_MODE=native`, bots are limited to supported AI assistants and use Matomo's separate AI reports. With `visits`, detected bots use the standard visitor reports, including Googlebot and ChatGPT. Other values are rejected.
@@ -50,6 +51,23 @@ Serverless pipeline (TypeScript, Node 24) that consumes CloudFront access logs f
   Example: `^[^?]+\\.(?:css|js|png)(?:\\?|$)`
 
   Note: If a URL matches `URL_EXCLUDE_REGEX`, it is skipped even if it also matches `DOCUMENT_REGEX` (i.e. it will not be tracked as a download).
+
+## Domain Routing
+
+To send requests for different domains to different Matomo sites using the same Lambda and Matomo endpoint, configure:
+
+```dotenv
+MATOMO_SITE_ID=1
+MATOMO_SITE_ID_MAP='{"latopratico.com":2,"guida.com":3}'
+```
+
+The quotes above are for dotenv or shell syntax; in the Lambda console, enter the JSON value `{"latopratico.com":2,"guida.com":3}` without surrounding single quotes. Replace these IDs with your Matomo site IDs. `MATOMO_SITE_ID` remains required: requests for unmapped domains use this fallback.
+
+Routing uses the host resolved for the request URL: `x-host-header` from the log, or `CLOUDFRONT_DEFAULT_HOST` when that field is missing or empty. Hostname matches are exact and case-insensitive, ignoring a port and a trailing DNS dot. `www.latopratico.com` and other subdomains are separate hosts and must be listed explicitly if they need an override. Entries for different domains can share a log file, Lambda event, or tracking batch; each request carries its selected `idsite`.
+
+With `MATOMO_BOT_TRACKING_MODE=visits`, the two configured bot dimension IDs apply to every destination site. Create and activate Action dimensions with the same IDs and meanings on each site, including the fallback site. If `MATOMO_TOKEN_AUTH` is configured, its user must have write or admin access to all mapped sites and the fallback site. All destinations use the same `MATOMO_URL` and token.
+
+Logs without `x-host-header` all use the single `CLOUDFRONT_DEFAULT_HOST`; they cannot distinguish the original domains. Include `x-host-header` in CloudFront logs or JSON Lines entries when tracking multiple domains.
 
 ## Recording Modes
 
@@ -157,7 +175,7 @@ JSON Lines / NDJSON logs contain one JSON object per line, without an enclosing 
 {"date":"2026-10-05","time":"10:00:01","cs-method":"GET","cs-uri-stem":"/","cs-uri-query":"-","cs(User-Agent)":"ChatGPT-User/1.0","sc-status":"200"}
 ```
 
-These entries omit protocol and host, so set `CLOUDFRONT_DEFAULT_PROTOCOL` and `CLOUDFRONT_DEFAULT_HOST` as shown above. If a log entry contains `cs-protocol` or `x-host-header`, those values take precedence over the corresponding fallback. A missing URL field without a fallback causes the entry to be skipped.
+These entries omit protocol and host, so set `CLOUDFRONT_DEFAULT_PROTOCOL` and `CLOUDFRONT_DEFAULT_HOST` as shown above. If a log entry contains `cs-protocol` or `x-host-header`, those values take precedence over the corresponding fallback. A missing URL field without a fallback causes the entry to be skipped. For multiple domains, include `x-host-header` in each entry so `MATOMO_SITE_ID_MAP` can select the appropriate site.
 
 Save local files as `.jsonl` or `.jsonl.gz`. S3 objects consumed by the Lambda must be gzip-compressed; configure the S3 trigger to include their prefix and `.gz` suffix.
 
@@ -231,7 +249,7 @@ Example CloudFront logging fields (set on the distribution) to cover required/op
 
 - Reads S3 objects as gzip streams, splits into lines, and accepts either whitespace-separated CloudFront logs (with an optional `#Fields` header) or JSON Lines / NDJSON (one flat JSON object per line). Numeric JSON values are converted to strings; `-` and `null` become empty strings. Malformed lines are skipped and logged.
 - Maps fields to Matomo payload:
-  - Required: `idsite`, `rec:1`, `url` (protocol+host+path+query), `cdt` (`Y-m-d H:i:s`), `ua`, `source:'CloudFront'`.
+  - Required: `idsite` (matching `MATOMO_SITE_ID_MAP` override or fallback `MATOMO_SITE_ID`), `rec:1`, `url` (protocol+host+path+query), `cdt` (`Y-m-d H:i:s`), `ua`, `source:'CloudFront'`.
   - Recording: `recMode` from `MATOMO_REC_MODE` (default `1`), except detected bots in `visits` mode, which omit it and send `bots:1`. In `visits` mode, also sends the configured `dimension<ID>` values for each request.
   - Optional: `http_status`, `bw_bytes`, `pf_srv`, and `cip` when `CLOUDFRONT_BEHIND_CLOUDFLARE` is enabled and a valid client IP can be selected.
 - Uses native AI bot-only recording by default. `MATOMO_REC_MODE=2` includes normal visits. `MATOMO_BOT_TRACKING_MODE=visits` records detected bots in standard visitor reports with bot identity dimensions, and bot-only mode skips requests with no detected bot. See the [Matomo Tracking API](https://developer.matomo.org/api-reference/tracking-api#tracking-bots).
@@ -260,7 +278,7 @@ An HTTP 200 response logged as `Matomo batch send success` does not prove that e
 If batches are sent but no data appears:
 
 1. For browser visits, confirm the deployed bundle contains support for `MATOMO_REC_MODE` and set that variable to `2`. Expanding `USER_AGENT_ALLOWLIST_REGEX` alone does not enable visit recording in bot-only mode.
-2. Check the selected Matomo site's ID against `MATOMO_SITE_ID`, and select the date of the requests in the source logs. The `cdt` parameter preserves their UTC timestamp, rather than using the Lambda invocation time.
+2. Check the selected Matomo site's ID against the matching `MATOMO_SITE_ID_MAP` entry or fallback `MATOMO_SITE_ID`, and select the date of the requests in the source logs. The `cdt` parameter preserves their UTC timestamp, rather than using the Lambda invocation time.
 3. Look in the appropriate report: standard visitor reports for browser traffic and bots in `visits` mode, or AI Chatbot reports for supported AI bots in `native` mode. For `visits`, confirm both configured dimensions are active Action dimensions on the selected site. Check the `BotTracking` plugin for self-hosted native AI reports.
 4. Check for explicit user agent filters, excluded URLs, and missing protocol/host fallbacks. Matomo may also exclude requests according to its own bot and traffic filtering rules.
 

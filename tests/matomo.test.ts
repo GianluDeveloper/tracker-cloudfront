@@ -12,6 +12,59 @@ const config = getConfig({
 const configNoAllowlist = { ...config, userAgentAllowlistRegex: undefined };
 
 describe('buildMatomoPayload', () => {
+  describe('domain site ID overrides', () => {
+    const env = {
+      MATOMO_URL: 'https://analytics.example.com',
+      MATOMO_SITE_ID: '99',
+      MATOMO_SITE_ID_MAP: '{"latopratico.com":2,"guida.com":3}',
+      CLOUDFRONT_DEFAULT_PROTOCOL: 'https',
+      CLOUDFRONT_DEFAULT_HOST: 'latopratico.com'
+    };
+    const entry = {
+      date: '2026-10-06',
+      time: '10:00:00',
+      'cs-uri-stem': '/page'
+    };
+
+    it.each([
+      ['latopratico.com', 2],
+      ['guida.com', 3],
+      ['LATOPRATICO.COM.:443', 2],
+      ['unknown.com', 99],
+      ['www.latopratico.com', 99],
+      ['blog.guida.com', 99],
+      ['constructor', 99],
+      ['toString', 99]
+    ])(
+      'routes host %s to site %s and preserves the logged URL',
+      (host, siteId) => {
+        const payload = buildMatomoPayload(
+          { ...entry, 'x-host-header': host },
+          getConfig(env)
+        );
+        expect(payload.idsite).toBe(siteId);
+        expect(payload.url).toBe(`https://${host}/page`);
+      }
+    );
+
+    it('uses the mapped fallback host when the logged host is missing', () => {
+      const payload = buildMatomoPayload(entry, getConfig(env));
+      expect(payload.idsite).toBe(2);
+      expect(payload.url).toBe('https://latopratico.com/page');
+    });
+
+    it.each([undefined, '{}'])(
+      'keeps the default site ID when the map is %s',
+      (map) => {
+        const payload = buildMatomoPayload(
+          entry,
+          getConfig({ ...env, MATOMO_SITE_ID_MAP: map })
+        );
+        expect(payload.idsite).toBe(99);
+      }
+    );
+  });
+
   describe('bot visits and action dimensions', () => {
     const entry = {
       date: '2026-10-06',

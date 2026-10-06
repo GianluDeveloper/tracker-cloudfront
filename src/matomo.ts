@@ -6,6 +6,7 @@ import type {
 import { getCloudFrontClientIp } from './clientIp.js';
 import { getCloudFrontUserAgent } from './userAgent.js';
 import { detectBot } from './bot.js';
+import { normalizeDomain } from './domain.js';
 
 const toIntIfNumeric = (value?: string) => {
   if (value === undefined) return undefined;
@@ -58,8 +59,15 @@ export function buildMatomoPayload(
     throw new Error('Missing required protocol or host in log entry');
   }
 
+  const siteIdMap = config.matomoSiteIdMap;
+  const domain = siteIdMap ? normalizeDomain(host) : undefined;
+  const siteId =
+    domain && siteIdMap && Object.hasOwn(siteIdMap, domain)
+      ? siteIdMap[domain]
+      : config.matomoSiteId;
+
   const payload: MatomoPayload = {
-    idsite: config.matomoSiteId,
+    idsite: siteId,
     rec: 1,
     recMode: config.matomoRecMode ?? 1,
     url,

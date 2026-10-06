@@ -12,6 +12,7 @@ describe('getConfig', () => {
     expect(config).toMatchObject({
       matomoUrl: baseEnv.MATOMO_URL,
       matomoSiteId: 42,
+      matomoSiteIdMap: undefined,
       matomoTokenAuth: undefined,
       matomoRecMode: 1,
       matomoBotTrackingMode: 'native',
@@ -35,6 +36,136 @@ describe('getConfig', () => {
     expect(config.urlExcludeRegex).toEqual(
       /^[^?]+\.(?:css|js|mjs|map|json|xml|webmanifest|manifest|png|jpe?g|gif|webp|avif|svg|ico|bmp|tiff?|woff2?|ttf|otf|eot|rss|atom|wasm|txt)(?:\?|$)/i
     );
+  });
+
+  it('reads domain-specific site IDs while retaining the default site ID', () => {
+    const config = getConfig({
+      ...baseEnv,
+      MATOMO_SITE_ID_MAP: '{"latopratico.com":2,"guida.com":3}'
+    });
+    expect(config.matomoSiteId).toBe(42);
+    expect(config.matomoSiteIdMap).toEqual({
+      'latopratico.com': 2,
+      'guida.com': 3
+    });
+  });
+
+  it.each([undefined, '', '   '])(
+    'treats blank domain mappings as unset (%j)',
+    (value) => {
+      expect(
+        getConfig({ ...baseEnv, MATOMO_SITE_ID_MAP: value }).matomoSiteIdMap
+      ).toBeUndefined();
+    }
+  );
+
+  it('allows an empty domain mapping', () => {
+    expect(
+      getConfig({ ...baseEnv, MATOMO_SITE_ID_MAP: '{}' }).matomoSiteIdMap
+    ).toEqual({});
+  });
+
+  it('normalizes domain keys and keeps subdomains distinct', () => {
+    const config = getConfig({
+      ...baseEnv,
+      MATOMO_SITE_ID_MAP: JSON.stringify({
+        ' LATOPRATICO.COM.:443 ': 2,
+        'WWW.Latopratico.com': 3,
+        'bücher.example': 4,
+        LOCALHOST: 5,
+        constructor: 6
+      })
+    });
+    expect(config.matomoSiteIdMap).toEqual({
+      'latopratico.com': 2,
+      'www.latopratico.com': 3,
+      'xn--bcher-kva.example': 4,
+      localhost: 5,
+      constructor: 6
+    });
+    expect(Object.hasOwn(config.matomoSiteIdMap!, 'constructor')).toBe(true);
+  });
+
+  it.each(['{invalid', 'null', '[]', '[2]', '2', '"guida.com"', 'true'])(
+    'rejects invalid JSON objects for domain mappings (%j)',
+    (value) => {
+      expect(() =>
+        getConfig({ ...baseEnv, MATOMO_SITE_ID_MAP: value })
+      ).toThrow('Invalid MATOMO_SITE_ID_MAP. Expected a JSON object.');
+    }
+  );
+
+  it.each([0, -2, 1.5, '2', null, true, {}, [], 9007199254740992])(
+    'rejects domain mappings with invalid site IDs (%j)',
+    (siteId) => {
+      expect(() =>
+        getConfig({
+          ...baseEnv,
+          MATOMO_SITE_ID_MAP: JSON.stringify({ 'guida.com': siteId })
+        })
+      ).toThrow(/Site IDs must be positive safe integer JSON numbers/);
+    }
+  );
+
+  it.each([
+    '',
+    'https://guida.com',
+    'guida.com/path',
+    'guida.com?query=1',
+    'guida.com#fragment',
+    'user@guida.com',
+    '*.guida.com',
+    'guida .com',
+    'guida..com',
+    'guida.com..',
+    '-guida.com',
+    'guida-.com',
+    'guida.com:https',
+    'guida.com:',
+    'guida.com:443:80',
+    'guida\\.com',
+    'guida%2ecom',
+    `${'a'.repeat(64)}.com`
+  ])('rejects invalid domain keys (%j)', (host) => {
+    expect(() =>
+      getConfig({
+        ...baseEnv,
+        MATOMO_SITE_ID_MAP: JSON.stringify({ [host]: 2 })
+      })
+    ).toThrow(/Keys must be hostnames without protocols or paths/);
+  });
+
+  it.each([
+    ['guida.com', 'GUIDA.COM'],
+    ['guida.com', 'guida.com.'],
+    ['guida.com', 'guida.com:443'],
+    ['guida.com', ' guida.com '],
+    ['bücher.example', 'xn--bcher-kva.example']
+  ])('rejects ambiguous domain mappings for %s and %s', (first, second) => {
+    expect(() =>
+      getConfig({
+        ...baseEnv,
+        MATOMO_SITE_ID_MAP: JSON.stringify({ [first]: 2, [second]: 3 })
+      })
+    ).toThrow(/Multiple keys resolve to the same domain/);
+  });
+
+  it('does not expose invalid mapping contents in configuration errors', () => {
+    expect(() =>
+      getConfig({
+        ...baseEnv,
+        MATOMO_SITE_ID_MAP: '{"guida.com":"private-value"}'
+      })
+    ).toThrow(/^Invalid MATOMO_SITE_ID_MAP\. Site IDs must/);
+  });
+
+  it('still requires the fallback site ID when domain mappings are configured', () => {
+    expect(() =>
+      getConfig({
+        MATOMO_URL: baseEnv.MATOMO_URL,
+        MATOMO_SITE_ID_MAP: '{"guida.com":3}'
+      })
+    ).toThrow(/MATOMO_SITE_ID is required/);
   });
 
   it('allows both NotebookLM user agent tokens by default', () => {

@@ -67,6 +67,39 @@ describe('buildRequestsFromFile', () => {
     expect(requests[0]).toContain('idsite=1');
   });
 
+  it.each([false, true])(
+    'routes mixed-domain local logs using the site map and fallback (gzip: %s)',
+    async (gz) => {
+      const mappedLog = `#Fields: date time cs-method cs-protocol x-host-header cs-uri-stem cs-uri-query sc-status time-taken sc-bytes cs(User-Agent)
+2026-10-06 10:00:00 GET https latopratico.com /page - 200 0.100 512 Mozilla/5.0
+2026-10-06 10:00:01 GET https GUIDA.COM.:443 /page - 200 0.100 512 Mozilla/5.0
+2026-10-06 10:00:02 GET https unknown.com /page - 200 0.100 512 Mozilla/5.0
+2026-10-06 10:00:03 GET https www.latopratico.com /page - 200 0.100 512 Mozilla/5.0
+2026-10-06 10:00:04 GET https - /page - 200 0.100 512 Mozilla/5.0
+`;
+      const { filePath, tmpDir } = await writeTempFile(mappedLog, gz);
+      tmpDirs.push(tmpDir);
+      const mappedConfig = getConfig({
+        MATOMO_URL: 'https://analytics.example.com',
+        MATOMO_SITE_ID: '1',
+        MATOMO_SITE_ID_MAP: '{"latopratico.com":2,"guida.com":3}',
+        MATOMO_REC_MODE: '2',
+        CLOUDFRONT_DEFAULT_HOST: 'latopratico.com'
+      });
+      const requests = (
+        await buildRequestsFromFile(filePath, mappedConfig)
+      ).map((request) => new URLSearchParams(request.slice(1)));
+      expect(requests.map((request) => request.get('idsite'))).toEqual([
+        '2',
+        '3',
+        '1',
+        '1',
+        '2'
+      ]);
+      expect(requests[4].get('url')).toBe('https://latopratico.com/page');
+    }
+  );
+
   it.each([
     { mode: '1', gz: false },
     { mode: '1', gz: true },

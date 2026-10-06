@@ -1,4 +1,5 @@
 import type { LogLevel, MatomoConfig } from './types.js';
+import { normalizeDomain } from './domain.js';
 
 const toInt = (value: string | undefined | null, fallback?: number) => {
   if (value === undefined || value === null || value === '') return fallback;
@@ -25,6 +26,49 @@ const parseDimensionId = (
     throw new Error(`Invalid ${name}. Expected an integer between 1 and 999.`);
   }
   return parsed;
+};
+
+const parseSiteIdMap = (
+  value: string | undefined
+): Record<string, number> | undefined => {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new Error('Invalid MATOMO_SITE_ID_MAP. Expected a JSON object.');
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('Invalid MATOMO_SITE_ID_MAP. Expected a JSON object.');
+  }
+
+  const entries = new Map<string, number>();
+  for (const [host, siteId] of Object.entries(parsed)) {
+    const domain = normalizeDomain(host);
+    if (!domain) {
+      throw new Error(
+        'Invalid MATOMO_SITE_ID_MAP. Keys must be hostnames without protocols or paths.'
+      );
+    }
+    if (
+      typeof siteId !== 'number' ||
+      !Number.isSafeInteger(siteId) ||
+      siteId < 1
+    ) {
+      throw new Error(
+        'Invalid MATOMO_SITE_ID_MAP. Site IDs must be positive safe integer JSON numbers.'
+      );
+    }
+    if (entries.has(domain)) {
+      throw new Error(
+        'Invalid MATOMO_SITE_ID_MAP. Multiple keys resolve to the same domain.'
+      );
+    }
+    entries.set(domain, siteId);
+  }
+  return Object.fromEntries(entries);
 };
 
 const escapeRegex = (value: string) =>
@@ -85,6 +129,7 @@ export function getConfig(
   if (matomoSiteId === undefined) {
     throw new Error('MATOMO_SITE_ID is required');
   }
+  const matomoSiteIdMap = parseSiteIdMap(env.MATOMO_SITE_ID_MAP);
 
   const batchSize = toInt(env.BATCH_SIZE, 20) ?? 20;
   const matomoTimeoutMs = toInt(env.MATOMO_TIMEOUT_MS, 5000) ?? 5000;
@@ -187,6 +232,7 @@ export function getConfig(
   return {
     matomoUrl,
     matomoSiteId,
+    matomoSiteIdMap,
     matomoTokenAuth,
     matomoRecMode,
     matomoBotTrackingMode,
