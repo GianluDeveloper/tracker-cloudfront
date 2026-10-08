@@ -76,6 +76,10 @@ export function buildMatomoPayload(
     ua: userAgent
   };
 
+  if (entry['cs(Referer)']) {
+    payload.urlref = entry['cs(Referer)'];
+  }
+
   if (config.matomoBotTrackingMode === 'visits') {
     const bot = detectBot(userAgent);
     if (bot) {

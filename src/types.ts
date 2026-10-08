@@ -38,6 +38,7 @@ export interface MatomoPayload {
   recMode?: 1 | 2;
   bots?: 1;
   url: string;
+  urlref?: string;
   source: 'CloudFront';
   cdt: string;
   ua: string;

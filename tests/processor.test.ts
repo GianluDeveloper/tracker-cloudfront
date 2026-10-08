@@ -48,6 +48,57 @@ const toAsyncLines = (content: string) =>
   })();
 
 describe('buildPayloadsFromLogContent', () => {
+  it.each(['jsonl', 'tsv'])(
+    'forwards the referer in %s logs without changing URL encoding',
+    async (format) => {
+      const sender = vi
+        .spyOn(http, 'sendMatomoBatch')
+        .mockResolvedValue(undefined);
+      try {
+        const referer = 'https://search.example.com/?q=a%20b+c&next=%2Fpage';
+        const entry = {
+          date: '2026-10-08',
+          time: '10:00:00',
+          'cs-method': 'GET',
+          'cs-protocol': 'https',
+          'x-host-header': 'example.com',
+          'cs-uri-stem': '/page',
+          'cs(User-Agent)': 'Mozilla/5.0'
+        };
+        const content =
+          format === 'jsonl'
+            ? [referer, '-', null, '', undefined]
+                .map((value) =>
+                  JSON.stringify({ ...entry, 'cs(Referer)': value })
+                )
+                .join('\n')
+            : [
+                `#Fields: ${Object.keys(entry).join(' ')} cs(Referer)`,
+                ...[referer, '-'].map((value) =>
+                  [...Object.values(entry), value].join('\t')
+                ),
+                `#Fields: ${Object.keys(entry).join(' ')}`,
+                Object.values(entry).join('\t')
+              ].join('\n');
+
+        await sendLogContentToMatomo(content, config);
+
+        expect(sender).toHaveBeenCalledTimes(1);
+        const requests = (sender.mock.calls[0][1] as string[]).map(
+          (request) => new URLSearchParams(request.slice(1))
+        );
+        expect(requests).toHaveLength(format === 'jsonl' ? 5 : 3);
+        expect(requests[0].get('urlref')).toBe(referer);
+        expect(requests[0].has('next')).toBe(false);
+        expect(
+          requests.slice(1).every((request) => !request.has('urlref'))
+        ).toBe(true);
+      } finally {
+        sender.mockRestore();
+      }
+    }
+  );
+
   it('routes each domain in a mixed batch to its mapped Matomo site', async () => {
     const sender = vi
       .spyOn(http, 'sendMatomoBatch')

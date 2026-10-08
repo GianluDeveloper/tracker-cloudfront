@@ -242,6 +242,7 @@ Example CloudFront logging fields (set on the distribution) to cover required/op
 
 - Enable standard CloudFront access logs to S3 (gzip on).
 - Include these fields (either via `#Fields` header or default order): `date`, `time`, `cs-method`, `cs-protocol`, `x-host-header`, `cs-uri-stem`, `cs-uri-query`, `sc-status`, `time-taken`, `sc-bytes`, `cs(User-Agent)`.
+- Include `cs(Referer)` in the `#Fields` header or JSON Lines keys to forward the referrer to Matomo as `urlref`. Missing, empty, `-`, and JSON `null` values are omitted. The logged URL is preserved and encoded when building the Matomo request.
 - When enabling `CLOUDFRONT_BEHIND_CLOUDFLARE`, also include `c-ip` and `x-forwarded-for` (or the same keys in JSON Lines logs). If custom or enriched logs capture Cloudflare's `CF-Connecting-IP` header, include it as `cf-connecting-ip` or `CF-Connecting-IP`; standard CloudFront logs do not provide that header as a native field.
 - Ensure the log path/prefix matches your S3 trigger filters (e.g. suffix `.gz`).
 
@@ -251,7 +252,7 @@ Example CloudFront logging fields (set on the distribution) to cover required/op
 - Maps fields to Matomo payload:
   - Required: `idsite` (matching `MATOMO_SITE_ID_MAP` override or fallback `MATOMO_SITE_ID`), `rec:1`, `url` (protocol+host+path+query), `cdt` (`Y-m-d H:i:s`), `ua`, `source:'CloudFront'`.
   - Recording: `recMode` from `MATOMO_REC_MODE` (default `1`), except detected bots in `visits` mode, which omit it and send `bots:1`. In `visits` mode, also sends the configured `dimension<ID>` values for each request.
-  - Optional: `http_status`, `bw_bytes`, `pf_srv`, and `cip` when `CLOUDFRONT_BEHIND_CLOUDFLARE` is enabled and a valid client IP can be selected.
+  - Optional: `urlref` from a non-empty `cs(Referer)`, `http_status`, `bw_bytes`, `pf_srv`, and `cip` when `CLOUDFRONT_BEHIND_CLOUDFLARE` is enabled and a valid client IP can be selected.
 - Uses native AI bot-only recording by default. `MATOMO_REC_MODE=2` includes normal visits. `MATOMO_BOT_TRACKING_MODE=visits` records detected bots in standard visitor reports with bot identity dimensions, and bot-only mode skips requests with no detected bot. See the [Matomo Tracking API](https://developer.matomo.org/api-reference/tracking-api#tracking-bots).
 - Filters requests by user agent using `USER_AGENT_ALLOWLIST_REGEX`; the default is an AI bot allowlist in native bot-only mode and all non-empty user agents in visits or automatic mode. Non-matching or empty user agents are skipped before payload assembly.
 - When `CLOUDFRONT_DECODE_USER_AGENT` is enabled, URL-decodes `cs(User-Agent)` once before user agent filtering and Matomo request encoding. Malformed encoding keeps the original user agent.
